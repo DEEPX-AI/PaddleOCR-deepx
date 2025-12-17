@@ -38,3 +38,10 @@ test_tipc/web/node_modules/
 
 .venv/
 .worktrees/
+
+# for deepx development environment
+venv*/
+venv/
+dx_*/
+dx_*
+*.crt
