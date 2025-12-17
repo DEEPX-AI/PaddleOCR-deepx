@@ -1,0 +1,15 @@
+# Test Requirements
+# Install with: pip install -r test_requirements.txt
+
+# Core testing
+pytest>=7.4.0
+pytest-timeout>=2.1.0
+pytest-xdist>=3.3.0  # For parallel test execution
+pytest-cov>=4.1.0    # For coverage reporting
+
+# HTTP testing
+requests>=2.31.0
+
+# Optional: Better test output
+pytest-html>=3.2.0   # HTML test reports
+pytest-json-report>=1.5.0  # JSON test reports
