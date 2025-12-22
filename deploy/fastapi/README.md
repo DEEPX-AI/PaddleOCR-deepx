@@ -6,7 +6,7 @@ An OCR REST API service using FastAPI based on PaddlePaddle 3.0. Uses PP-OCRv5 m
 
 ### Local Environment (Development/Testing)
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 
 # 1. Environment setup (first time only)
 ./local_setup.sh
@@ -17,7 +17,7 @@ cd PaddleOCR/deploy/docker/fastapi
 
 ### Local Environment with DEEPX NPU (Hardware Acceleration)
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 
 # 1. NPU environment setup (first time only)
 ./local_deepx_setup.sh --dx_rt /path/to/dx_rt
@@ -30,7 +30,7 @@ cd PaddleOCR/deploy/docker/fastapi
 
 ### Docker Environment (Production/Deployment)
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 
 # Build + Run in one command
 ./docker_run.sh
@@ -46,7 +46,7 @@ cd PaddleOCR/deploy/docker/fastapi
 
 **Basic setup (CPU + Mobile model):**
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 chmod +x local_setup.sh
 ./local_setup.sh
 ```
@@ -171,7 +171,7 @@ The service runs at http://localhost:8080
 
 **Basic execution (CPU + Mobile model):**
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 chmod +x docker_run.sh
 ./docker_run.sh
 ```
@@ -212,7 +212,7 @@ If the image doesn't exist, it automatically builds and then runs the container!
 
 **CPU version (with models):**
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 chmod +x docker_build.sh
 ./docker_build.sh
 ```
@@ -773,7 +773,7 @@ async def ocr_image(...):
 ## 📁 Script File Structure
 
 ```
-deploy/docker/fastapi/
+deploy/fastapi/
 ├── local_setup.sh      # Local environment setup (venv creation, dependency installation)
 ├── run.sh              # Local server execution
 ├── docker_build.sh     # Docker image build

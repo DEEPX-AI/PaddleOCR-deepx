@@ -6,7 +6,7 @@
 set -e  # Exit on error
 
 # Configuration
-PYTHON_VERSION="python3.10"
+PYTHON_VERSION="python3"  # Will auto-detect best available version
 VENV_DIR="venv"
 DEVICE_TYPE="cpu"  # cpu or gpu
 PADDLEOCR_VERSION="3.3.2"
@@ -64,7 +64,7 @@ while [[ $# -gt 0 ]]; do
             echo -e "  ${GREEN}--use-mobile${NC}       ${YELLOW}Use mobile version models instead of server models${NC}"
             echo -e "  ${GREEN}--use-server${NC}       ${YELLOW}Use server models${NC}"
             echo -e "  ${GREEN}--no-models${NC}        ${YELLOW}Skip downloading models${NC}"
-            echo -e "  ${GREEN}--python${NC} VERSION   ${YELLOW}Specify Python version (default: python3.10)${NC}"
+            echo -e "  ${GREEN}--python${NC} VERSION   ${YELLOW}Specify Python version (default: auto-detect)${NC}"
             echo -e "  ${GREEN}--version${NC} VERSION  ${YELLOW}Specify PaddleOCR version (default: 3.3.2)${NC}"
             echo -e "  ${GREEN}-h, --help${NC}         ${YELLOW}Show this help message${NC}"
             exit 0
@@ -138,7 +138,20 @@ if [ -d "$VENV_DIR" ]; then
     rm -rf "$VENV_DIR"
 fi
 
+# Auto-detect best Python version if using default
+if [ "$PYTHON_VERSION" = "python3" ]; then
+    DETECTED_VERSION=$($PYTHON_VERSION -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+    echo -e "${YELLOW}Creating virtual environment with $PYTHON_VERSION (version $DETECTED_VERSION)...${NC}"
+else
+    echo -e "${YELLOW}Creating virtual environment with $PYTHON_VERSION...${NC}"
+fi
+
 $PYTHON_VERSION -m venv "$VENV_DIR"
+
+# Get actual venv Python version for confirmation
+VENV_VERSION=$($VENV_DIR/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+echo -e "${GREEN}✓ Created virtual environment with Python $VENV_VERSION${NC}"
+
 source "$VENV_DIR/bin/activate"
 
 # Upgrade pip

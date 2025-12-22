@@ -38,4 +38,6 @@ venv*/
 venv/
 dx_*/
 dx_*
+dx-*/
+dx-*
 *.crt
