@@ -16,7 +16,14 @@ MODEL_TYPE="mobile"  # default: mobile
 USE_MOBILE_FLAG=false
 USE_SERVER_FLAG=false
 
-# Parse arguments
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --port)
@@ -40,22 +47,22 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            echo "Usage: $0 [OPTIONS]"
+            echo -e "${BLUE}Usage:${NC} $0 [OPTIONS]"
             echo ""
-            echo "Options:"
-            echo "  --port PORT      Service port (default: 8080)"
-            echo "  --host HOST      Bind host (default: 0.0.0.0)"
-            echo "  --use-mobile     Use mobile models (default)"
-            echo "  --use-server     Use server models"
-            echo "  -h, --help       Show this help message"
+            echo -e "${YELLOW}Options:${NC}"
+            echo -e "  ${GREEN}--port PORT${NC}      Service port (default: 8080)"
+            echo -e "  ${GREEN}--host HOST${NC}      Bind host (default: 0.0.0.0)"
+            echo -e "  ${GREEN}--use-mobile${NC}     Use mobile models (default)"
+            echo -e "  ${GREEN}--use-server${NC}     Use server models"
+            echo -e "  ${GREEN}-h, --help${NC}       Show this help message"
             echo ""
-            echo "Environment Variables:"
-            echo "  PORT             Service port"
-            echo "  HOST             Bind host"
-            echo "  USE_GPU          Use GPU (true/false)"
-            echo "  USE_MOBILE       Use mobile models (true/false)"
+            echo -e "${YELLOW}Environment Variables:${NC}"
+            echo -e "  ${GREEN}PORT${NC}             Service port"
+            echo -e "  ${GREEN}HOST${NC}             Bind host"
+            echo -e "  ${GREEN}USE_GPU${NC}          Use GPU (true/false)"
+            echo -e "  ${GREEN}USE_MOBILE${NC}       Use mobile models (true/false)"
             echo ""
-            echo "Examples:"
+            echo -e "${YELLOW}Examples:${NC}"
             echo "  $0                       # Run on default port 8080 (mobile models)"
             echo "  $0 --port 9000           # Run on port 9000"
             echo "  USE_GPU=true $0          # Run with GPU"
@@ -64,7 +71,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            echo "Unknown option: $1"
+            echo -e "${RED}Error: Unknown option: $1${NC}"
             echo "Use -h or --help for usage information"
             exit 1
             ;;
@@ -73,7 +80,7 @@ done
 
 # Check for conflicting options
 if [ "$USE_MOBILE_FLAG" = true ] && [ "$USE_SERVER_FLAG" = true ]; then
-    echo "❌ Error: --use-mobile and --use-server cannot be used together"
+    echo -e "${RED}❌ Error: --use-mobile and --use-server cannot be used together${NC}"
     echo "Please specify only one model type option."
     exit 1
 fi
@@ -83,20 +90,21 @@ if [ "$USE_MOBILE_FLAG" = false ] && [ "$USE_SERVER_FLAG" = false ]; then
     export USE_MOBILE="true"  # Default to mobile
 fi
 
-echo "========================================"
-echo "PaddleOCR FastAPI Local Service"
-echo "========================================"
-echo "Host: $HOST"
-echo "Port: $PORT"
-echo "========================================"
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}PaddleOCR FastAPI Local Service${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo -e "${YELLOW}Host:${NC} $HOST"
+echo -e "${YELLOW}Port:${NC} $PORT"
+echo -e "${YELLOW}Model Type:${NC} $MODEL_TYPE"
+echo -e "${GREEN}========================================${NC}"
 
 # Check if virtual environment exists
 if [ ! -d "$VENV_DIR" ]; then
     echo ""
-    echo "⚠️  Virtual environment not found at: $VENV_DIR"
+    echo -e "${YELLOW}⚠️  Virtual environment not found at: $VENV_DIR${NC}"
     echo ""
     echo "Please run local_setup.sh first:"
-    echo "  ./local_setup.sh or ./local_deepx_setup.sh (for DEEPX NPU support)"
+    echo -e "  ${GREEN}./local_setup.sh${NC} or ${GREEN}./local_deepx_setup.sh${NC} (for DEEPX NPU support)"
     echo ""
     exit 1
 fi
@@ -104,14 +112,15 @@ fi
 # Check if service script exists
 if [ ! -f "$SERVICE_SCRIPT" ]; then
     echo ""
-    echo "❌ Error: ocr_service.py not found at: $SERVICE_SCRIPT"
+    echo -e "${RED}❌ Error: ocr_service.py not found at: $SERVICE_SCRIPT${NC}"
     exit 1
 fi
 
 # Apply DEEPX NPU environment settings if available
 DEEPX_ENV_FILE="$SCRIPT_DIR/deepx_env.sh"
 if [ -f "$DEEPX_ENV_FILE" ]; then
-    echo "🔧 Applying DEEPX NPU environment settings..."
+    echo -e "${YELLOW}🔧 Applying DEEPX NPU environment settings...${NC}"
+    # Source with default values (1 2 1 3 2 4)
     source "$DEEPX_ENV_FILE"
     echo ""
 fi
@@ -121,15 +130,15 @@ export PORT
 export HOST
 
 echo ""
-echo "🚀 Starting OCR service..."
+echo -e "${BLUE}🚀 Starting OCR service...${NC}"
 echo ""
-echo "Service will be available at:"
-echo "  http://localhost:${PORT}"
-echo "  API Docs: http://localhost:${PORT}/docs"
+echo -e "${YELLOW}Service will be available at:${NC}"
+echo -e "  ${GREEN}http://localhost:${PORT}${NC}"
+echo -e "  ${GREEN}API Docs: http://localhost:${PORT}/docs${NC}"
 echo ""
-echo "Press Ctrl+C to stop the service"
+echo -e "${YELLOW}Press Ctrl+C to stop the service${NC}"
 echo ""
-echo "========================================"
+echo -e "${GREEN}========================================${NC}"
 
 # Run the service
 "$VENV_DIR/bin/python" "$SERVICE_SCRIPT"

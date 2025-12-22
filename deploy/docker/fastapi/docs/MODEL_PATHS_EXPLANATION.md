@@ -1,7 +1,7 @@
 # PP-OCR V5 Model Path Configuration Guide
 
 ## Overview
-PaddleOCR FastAPI service can select between mobile and server models using the `USE_MOBILE` environment variable.
+PaddleOCR FastAPI service can select between mobile and server models using the `USE_MOBILE` environment variable. **Mobile models are used by default** for better performance on edge devices. You can switch to server models using `--use-server` option or by setting `USE_MOBILE=false`.
 
 ## Model Download Location
 
@@ -21,45 +21,51 @@ $HOME/.paddlex/official_models/
 
 ### 1. Selection via Environment Variable
 
-**Server Model (default)**:
+**Mobile Model (default)**:
 ```bash
-# No environment variable or USE_MOBILE=false
+# No environment variable or USE_MOBILE=true (default)
 ./run.sh
+# or
+./run.sh --use-mobile
 # or
 docker run -d -p 8081:8080 paddleocr-fastapi-service
 ```
 
-**Mobile Model**:
+**Server Model**:
 ```bash
 # Using run.sh
-./run.sh --use-mobile
+./run.sh --use-server
 
 # Setting environment variable directly
-USE_MOBILE=true ./run.sh
+USE_MOBILE=false ./run.sh
 
 # Docker execution
-docker run -d -p 8081:8080 -e USE_MOBILE=true paddleocr-fastapi-service
+docker run -d -p 8081:8080 -e USE_MOBILE=false paddleocr-fastapi-service
 ```
 
 ### 2. Model Selection During Docker Build
 
-**Build with Server Model**:
+**Build with Mobile Model (default)**:
 ```bash
 ./docker_build.sh
+# or explicitly
+./docker_build.sh --use-mobile
 ```
 
-**Build with Mobile Model**:
+**Build with Server Model**:
 ```bash
-./docker_build.sh --use-mobile
+./docker_build.sh --use-server
 ```
 
 **Docker run script**:
 ```bash
-# Server model
+# Mobile model (default)
 ./docker_run.sh
-
-# Mobile model
+# or explicitly
 ./docker_run.sh --use-mobile
+
+# Server model
+./docker_run.sh --use-server
 ```
 
 ## Model Path Configuration at Code Level
@@ -213,11 +219,12 @@ print(f"Recognition model path: {rec_model}")
 
 ## Consistency Checklist
 
-✅ **--use-mobile option supported in all execution methods**
-- [x] `run.sh` - Local execution
-- [x] `docker_run.sh` - Docker execution
-- [x] `docker_build.sh` - Docker build
-- [x] `local_setup.sh` - Local environment setup
+✅ **Model selection options supported in all execution methods**
+- [x] `run.sh` - Local execution (default: mobile, options: --use-mobile, --use-server)
+- [x] `docker_run.sh` - Docker execution (default: mobile, options: --use-mobile, --use-server)
+- [x] `docker_build.sh` - Docker build (default: mobile, options: --use-mobile, --use-server)
+- [x] `local_setup.sh` - Local environment setup (default: mobile, options: --use-mobile, --use-server)
+- [x] `local_deepx_setup.sh` - Local NPU setup (default: mobile, options: --use-mobile, --use-server)
 
 ✅ **Automatic model path configuration**
 - [x] Automatic branching based on `USE_MOBILE` environment variable
@@ -234,12 +241,16 @@ If models don't exist, PaddleOCR will automatically download default models, but
 **Solution**:
 ```bash
 # Local environment
-./local_setup.sh --use-mobile  # Download mobile models
+./local_setup.sh                # Download mobile models (default)
 # or
-./local_setup.sh                # Download server models
+./local_setup.sh --use-mobile   # Explicitly download mobile models
+# or
+./local_setup.sh --use-server   # Download server models
 
 # Docker
-./docker_build.sh --use-mobile  # Build image with mobile models
+./docker_build.sh               # Build image with mobile models (default)
+# or
+./docker_build.sh --use-server  # Build image with server models
 ```
 
 ### When You Want to Verify Model Paths

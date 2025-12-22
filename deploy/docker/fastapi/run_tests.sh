@@ -96,17 +96,18 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --deepx)
-            if [ -z "$2" ]; then
-                echo -e "${RED}Error: --deepx option requires a value (true/false)${NC}"
-                echo "Usage: ./run_tests.sh --deepx <true|false>"
-                exit 1
-            fi
-            if [ "$2" = "false" ] || [ "$2" = "False" ] || [ "$2" = "FALSE" ]; then
-                USE_DEEPX=false
-            else
+            # Optional value: if no value or next arg starts with --, default to true
+            if [ -z "$2" ] || [[ "$2" == --* ]] || [[ "$2" == -* ]]; then
                 USE_DEEPX=true
+                shift
+            else
+                if [ "$2" = "false" ] || [ "$2" = "False" ] || [ "$2" = "FALSE" ]; then
+                    USE_DEEPX=false
+                else
+                    USE_DEEPX=true
+                fi
+                shift 2
             fi
-            shift 2
             ;;
         --sync)
             USE_SYNC=true

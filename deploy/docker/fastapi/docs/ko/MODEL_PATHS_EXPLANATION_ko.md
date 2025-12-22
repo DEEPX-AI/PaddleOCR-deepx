@@ -1,7 +1,7 @@
 # PP-OCR V5 모델 경로 설정 방법
 
 ## 개요
-PaddleOCR FastAPI 서비스는 `USE_MOBILE` 환경변수를 통해 mobile 모델과 server 모델을 선택하여 사용할 수 있습니다.
+PaddleOCR FastAPI 서비스는 `USE_MOBILE` 환경변수를 통해 mobile 모델과 server 모델을 선택하여 사용할 수 있습니다. **기본적으로 mobile 모델이 사용됩니다** (엣지 디바이스에서 더 나은 성능을 위해). `--use-server` 옵션을 사용하거나 `USE_MOBILE=false`를 설정하여 server 모델로 전환할 수 있습니다.
 
 ## 모델 다운로드 위치
 
@@ -21,45 +21,51 @@ $HOME/.paddlex/official_models/
 
 ### 1. 환경변수를 통한 선택
 
-**Server 모델 (기본값)**:
+**Mobile 모델 (기본값)**:
 ```bash
-# 환경변수 없음 또는 USE_MOBILE=false
+# 환경변수 없음 또는 USE_MOBILE=true (기본값)
 ./run.sh
+# 또는
+./run.sh --use-mobile
 # 또는
 docker run -d -p 8081:8080 paddleocr-fastapi-service
 ```
 
-**Mobile 모델**:
+**Server 모델**:
 ```bash
 # run.sh 사용
-./run.sh --use-mobile
+./run.sh --use-server
 
 # 환경변수 직접 설정
-USE_MOBILE=true ./run.sh
+USE_MOBILE=false ./run.sh
 
 # Docker 실행
-docker run -d -p 8081:8080 -e USE_MOBILE=true paddleocr-fastapi-service
+docker run -d -p 8081:8080 -e USE_MOBILE=false paddleocr-fastapi-service
 ```
 
 ### 2. Docker 빌드 시 모델 선택
 
-**Server 모델로 빌드**:
+**Mobile 모델로 빌드 (기본값)**:
 ```bash
 ./docker_build.sh
+# 또는 명시적으로
+./docker_build.sh --use-mobile
 ```
 
-**Mobile 모델로 빌드**:
+**Server 모델로 빌드**:
 ```bash
-./docker_build.sh --use-mobile
+./docker_build.sh --use-server
 ```
 
 **Docker run 스크립트**:
 ```bash
-# Server 모델
+# Mobile 모델 (기본값)
 ./docker_run.sh
-
-# Mobile 모델
+# 또는 명시적으로
 ./docker_run.sh --use-mobile
+
+# Server 모델
+./docker_run.sh --use-server
 ```
 
 ## 코드 레벨에서의 모델 경로 설정
@@ -213,11 +219,12 @@ print(f"Recognition model path: {rec_model}")
 
 ## 일관성 체크리스트
 
-✅ **모든 실행 방식에서 --use-mobile 옵션 지원**
-- [x] `run.sh` - 로컬 실행
-- [x] `docker_run.sh` - Docker 실행
-- [x] `docker_build.sh` - Docker 빌드
-- [x] `local_setup.sh` - 로컬 환경 설정
+✅ **모든 실행 방식에서 모델 선택 옵션 지원**
+- [x] `run.sh` - 로컬 실행 (기본값: mobile, 옵션: --use-mobile, --use-server)
+- [x] `docker_run.sh` - Docker 실행 (기본값: mobile, 옵션: --use-mobile, --use-server)
+- [x] `docker_build.sh` - Docker 빌드 (기본값: mobile, 옵션: --use-mobile, --use-server)
+- [x] `local_setup.sh` - 로컬 환경 설정 (기본값: mobile, 옵션: --use-mobile, --use-server)
+- [x] `local_deepx_setup.sh` - 로컬 NPU 설정 (기본값: mobile, 옵션: --use-mobile, --use-server)
 
 ✅ **모델 경로 자동 설정**
 - [x] `USE_MOBILE` 환경변수 기반 자동 분기
@@ -234,12 +241,20 @@ print(f"Recognition model path: {rec_model}")
 **해결방법**:
 ```bash
 # 로컬 환경
-./local_setup.sh --use-mobile  # mobile 모델 다운로드
+./local_setup.sh                # mobile 모델 다운로드 (기본값)
 # 또는
-./local_setup.sh                # server 모델 다운로드
+./local_setup.sh --use-mobile   # 명시적으로 mobile 모델 다운로드
+# 또는
+./local_setup.sh --use-server   # server 모델 다운로드
+
+# DEEPX NPU 환경
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt                # mobile 모델 (기본값)
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt --use-server   # server 모델
 
 # Docker
-./docker_build.sh --use-mobile  # mobile 모델 포함 이미지 빌드
+./docker_build.sh               # mobile 모델 포함 이미지 빌드 (기본값)
+# 또는
+./docker_build.sh --use-server  # server 모델 포함 이미지 빌드
 ```
 
 ### 모델 경로를 확인하고 싶을 때

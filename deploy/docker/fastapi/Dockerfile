@@ -1,8 +1,8 @@
 # PaddleOCR Simple OCR Service with FastAPI
 # Based on PaddlePaddle 3.x and PaddleOCR 3.3.2 with PP-OCRv5
-ARG BASE_IMAGE="python:3.10-slim"
+FROM python:3.10-slim
 
-FROM ${BASE_IMAGE}
+ARG SETUP_DEEPX="false"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_NO_CACHE_DIR=0
@@ -10,12 +10,14 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Install system dependencies
+ARG SETUP_DEEPX="false"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libgl1 \
         libglib2.0-0 \
         libgomp1 \
         wget \
+        $(if [ "${SETUP_DEEPX}" = "true" ]; then echo "build-essential git"; fi) \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PaddlePaddle (choose CPU or GPU version)
@@ -28,12 +30,28 @@ RUN if [ "${DEVICE_TYPE}" = "gpu" ]; then \
 
 # Install PaddleOCR and FastAPI
 ARG PADDLEOCR_VERSION="3.3.2"
+ARG SETUP_DEEPX="false"
 RUN python -m pip install paddleocr==${PADDLEOCR_VERSION} \
     fastapi==0.109.0 \
     uvicorn[standard]==0.27.0 \
     python-multipart==0.0.6 \
     pillow \
     opencv-python-headless
+
+# Install DEEPX NPU dependencies if enabled
+RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
+        python -m pip install \
+            torch==2.3.0 \
+            torchvision==0.18.0 \
+            torchaudio==2.3.0 \
+            onnxruntime==1.18.0 \
+            opencv-contrib-python==4.7.0.72 \
+            scikit-image \
+            imgaug \
+            shapely \
+            pyclipper \
+            jiwer; \
+    fi
 
 # Create working directory
 WORKDIR /app
@@ -47,7 +65,7 @@ USER paddleocr
 
 # Download PP-OCRv5 models (optional, can be done at runtime)
 ARG DOWNLOAD_MODELS="true"
-ARG USE_MOBILE="false"
+ARG USE_MOBILE="true"
 RUN if [ "${DOWNLOAD_MODELS}" = "true" ]; then \
         mkdir -p /home/paddleocr/.paddlex/official_models && cd /home/paddleocr/.paddlex/official_models; \
         if [ "${USE_MOBILE}" = "true" ]; then \

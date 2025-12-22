@@ -6,14 +6,18 @@
 set -e  # Exit on error
 
 # Configuration
-PYTHON_VERSION="python3.11"
+PYTHON_VERSION="python3.10"
 VENV_DIR="venv"
 DEVICE_TYPE="cpu"  # cpu or gpu
-MODEL_TYPE="server"  # server or mobile
 PADDLEOCR_VERSION="3.3.2"
 DOWNLOAD_MODELS="true"
 DOWNLOAD_DEEPX_MODELS="true"
 SETUP_NPU="true"
+
+# Default values
+MODEL_TYPE="mobile"  # default: mobile
+USE_MOBILE_FLAG=false
+USE_SERVER_FLAG=false
 
 # DEEPX Configuration
 DX_RT_PATH=""  # Required for NPU setup
@@ -51,16 +55,24 @@ while [[ $# -gt 0 ]]; do
             DOWNLOAD_MODELS="false"
             shift
             ;;
+        --use-mobile)
+            USE_MOBILE_FLAG=true
+            MODEL_TYPE="mobile"
+            export USE_MOBILE="true"
+            shift
+            ;;
+        --use-server)
+            USE_SERVER_FLAG=true
+            MODEL_TYPE="server"
+            export USE_MOBILE="false"
+            shift
+            ;;
         --no-deepx-models)
             DOWNLOAD_DEEPX_MODELS="false"
             shift
             ;;
         --no-npu)
             SETUP_NPU="false"
-            shift
-            ;;
-        --use-mobile)
-            MODEL_TYPE="mobile"
             shift
             ;;
         --python)
@@ -79,24 +91,26 @@ while [[ $# -gt 0 ]]; do
             CUSTOM_INTRA_OP_THREADS_COUNT="$2"
             shift 2
             ;;
-        --help)
-            echo "Usage: $0 [OPTIONS]"
+        -h|--help)
+            echo -e "${BLUE}Usage:${NC}"
+            echo -e "  $0 [OPTIONS]"
             echo ""
-            echo "Options:"
-            echo "  --dx_rt PATH         Path to dx_rt directory (REQUIRED for NPU setup)"
-            echo "  --gpu                Install GPU version of PaddlePaddle"
-            echo "  --use-mobile         Use mobile version models instead of server models"
-            echo "  --no-models          Skip downloading PaddleOCR models"
-            echo "  --no-deepx-models    Skip downloading DEEPX models"
-            echo "  --no-npu             Skip NPU setup (CPU only)"
-            echo "  --python VERSION     Specify Python version (default: python3.11, 3.11+ required for NPU)"
-            echo "  --version VERSION    Specify PaddleOCR version (default: 3.3.2)"
-            echo "  --inter-threads N    Set CUSTOM_INTER_OP_THREADS_COUNT (default: 1)"
-            echo "  --intra-threads N    Set CUSTOM_INTRA_OP_THREADS_COUNT (default: 3)"
-            echo "  --help               Show this help message"
+            echo -e "${BLUE}Options:${NC}"
+            echo -e "  ${GREEN}--dx_rt${NC} PATH         ${YELLOW}Path to dx_rt directory (REQUIRED for NPU setup)${NC}"
+            echo -e "  ${GREEN}--gpu${NC}                ${YELLOW}Install GPU version of PaddlePaddle${NC}"
+            echo -e "  ${GREEN}--use-mobile${NC}         ${YELLOW}Use mobile version models instead of server models${NC}"
+            echo -e "  ${GREEN}--use-server${NC}         ${YELLOW}Use server models${NC}"
+            echo -e "  ${GREEN}--no-models${NC}          ${YELLOW}Skip downloading PaddleOCR models${NC}"
+            echo -e "  ${GREEN}--no-deepx-models${NC}    ${YELLOW}Skip downloading DEEPX models${NC}"
+            echo -e "  ${GREEN}--no-npu${NC}             ${YELLOW}Skip NPU setup (CPU only)${NC}"
+            echo -e "  ${GREEN}--python${NC} VERSION     ${YELLOW}Specify Python version (default: python3.10, 3.10+ required for NPU)${NC}"
+            echo -e "  ${GREEN}--version${NC} VERSION    ${YELLOW}Specify PaddleOCR version (default: 3.3.2)${NC}"
+            echo -e "  ${GREEN}--inter-threads${NC} N    ${YELLOW}Set CUSTOM_INTER_OP_THREADS_COUNT (default: 1)${NC}"
+            echo -e "  ${GREEN}--intra-threads${NC} N    ${YELLOW}Set CUSTOM_INTRA_OP_THREADS_COUNT (default: 3)${NC}"
+            echo -e "  ${GREEN}-h, --help${NC}           ${YELLOW}Show this help message${NC}"
             echo ""
-            echo "Example:"
-            echo "  $0 --dx_rt /path/to/dx_rt"
+            echo -e "${BLUE}Example:${NC}"
+            echo -e "  ${GREEN}$0 --dx_rt /path/to/dx_rt${NC}"
             exit 0
             ;;
         *)
@@ -107,18 +121,32 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo -e "${BLUE}=== PaddleOCR FastAPI Service with DEEPX NPU Setup ===${NC}"
-echo "Python: $PYTHON_VERSION"
-echo "Device: $DEVICE_TYPE"
-echo "Model Type: $MODEL_TYPE"
-echo "PaddleOCR Version: $PADDLEOCR_VERSION"
-echo "Download Models: $DOWNLOAD_MODELS"
-echo "Download DEEPX Models: $DOWNLOAD_DEEPX_MODELS"
-echo "Setup NPU: $SETUP_NPU"
+# Check for conflicting options
+if [ "$USE_MOBILE_FLAG" = true ] && [ "$USE_SERVER_FLAG" = true ]; then
+    echo -e "${RED}❌ Error: --use-mobile and --use-server cannot be used together${NC}"
+    echo -e "${YELLOW}Please specify only one model type option.${NC}"
+    exit 1
+fi
+
+# Set default if no flag was specified
+if [ "$USE_MOBILE_FLAG" = false ] && [ "$USE_SERVER_FLAG" = false ]; then
+    export USE_MOBILE="true"  # Default to mobile
+fi
+
+echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║${NC}  ${BLUE}PaddleOCR FastAPI Service with DEEPX NPU Setup${NC}       ${GREEN}║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
+echo -e "${YELLOW}Python:${NC}               $PYTHON_VERSION"
+echo -e "${YELLOW}Device:${NC}               $DEVICE_TYPE"
+echo -e "${YELLOW}Model Type:${NC}           $MODEL_TYPE"
+echo -e "${YELLOW}PaddleOCR Version:${NC}    $PADDLEOCR_VERSION"
+echo -e "${YELLOW}Download Models:${NC}      $DOWNLOAD_MODELS"
+echo -e "${YELLOW}Download DEEPX Models:${NC} $DOWNLOAD_DEEPX_MODELS"
+echo -e "${YELLOW}Setup NPU:${NC}            $SETUP_NPU"
 if [ "$SETUP_NPU" = "true" ]; then
-    echo "  - DX_RT Path: $DX_RT_PATH"
-    echo "  - PyTorch: $TORCH_VERSION"
-    echo "  - RT Optimization: INTER=$CUSTOM_INTER_OP_THREADS_COUNT, INTRA=$CUSTOM_INTRA_OP_THREADS_COUNT"
+    echo -e "  ${BLUE}├─${NC} DX_RT Path: $DX_RT_PATH"
+    echo -e "  ${BLUE}├─${NC} PyTorch: $TORCH_VERSION"
+    echo -e "  ${BLUE}└─${NC} RT Optimization: INTER=$CUSTOM_INTER_OP_THREADS_COUNT, INTRA=$CUSTOM_INTRA_OP_THREADS_COUNT"
 fi
 echo ""
 
@@ -136,30 +164,30 @@ fi
 if ! command -v $PYTHON_VERSION &> /dev/null; then
     echo -e "${RED}Error: $PYTHON_VERSION is not installed${NC}"
     if [ "$SETUP_NPU" = "true" ]; then
-        echo "Python 3.11+ is REQUIRED for DEEPX NPU support (StrEnum compatibility)"
-        echo "Please install Python 3.11 or higher"
+        echo "python 3.10+ is REQUIRED for DEEPX NPU support (StrEnum compatibility)"
+        echo "Please install python 3.10 or higher"
     else
-        echo "Please install Python 3.11 or specify a different version with --python"
+        echo "Please install python 3.10 or specify a different version with --python"
     fi
     exit 1
 fi
 
-# Verify Python version (3.11+ required for NPU due to StrEnum)
+# Verify Python version (3.10+ required for NPU due to StrEnum)
 if [ "$SETUP_NPU" = "true" ]; then
     PYTHON_VERSION_NUM=$($PYTHON_VERSION -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
     echo -e "${YELLOW}Detected Python version: $PYTHON_VERSION_NUM${NC}"
     
-    # Check if version is 3.11 or higher
-    if [[ $(echo -e "$PYTHON_VERSION_NUM\n3.11" | sort -V | head -n 1) != "3.11" ]]; then
+    # Check if version is 3.10 or higher
+    if [[ $(echo -e "$PYTHON_VERSION_NUM\n3.10" | sort -V | head -n 1) != "3.10" ]]; then
         echo -e "${RED}Error: Python $PYTHON_VERSION_NUM is too old for DEEPX NPU support${NC}"
-        echo "Python 3.11+ is REQUIRED for DEEPX NPU (dx_baidu_gui uses StrEnum)"
+        echo "python 3.10+ is REQUIRED for DEEPX NPU (dx_baidu_gui uses StrEnum)"
         echo ""
         echo "Options:"
-        echo "  1. Install Python 3.11+: sudo apt install python3.11"
+        echo "  1. Install Python 3.10+: sudo apt install python3.10"
         echo "  2. Run without NPU: $0 --no-npu"
         exit 1
     fi
-    echo -e "${GREEN}✓ Python version $PYTHON_VERSION_NUM meets requirements (3.11+)${NC}"
+    echo -e "${GREEN}✓ Python version $PYTHON_VERSION_NUM meets requirements (3.10+)${NC}"
 fi
 
 # Check system dependencies
@@ -221,13 +249,13 @@ if [ -d "$VENV_DIR" ]; then
         VENV_PYTHON_VERSION=$($VENV_DIR/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
         echo "Existing venv Python version: $VENV_PYTHON_VERSION"
         
-        # Check if NPU setup requires Python 3.11+
+        # Check if NPU setup requires python 3.10+
         if [ "$SETUP_NPU" = "true" ]; then
-            if [[ $(echo -e "$VENV_PYTHON_VERSION\n3.11" | sort -V | head -n 1) != "3.11" ]]; then
+            if [[ $(echo -e "$VENV_PYTHON_VERSION\n3.10" | sort -V | head -n 1) != "3.10" ]]; then
                 echo -e "${RED}⚠ Warning: Existing venv uses Python $VENV_PYTHON_VERSION${NC}"
-                echo -e "${RED}  DEEPX NPU requires Python 3.11+ (StrEnum compatibility)${NC}"
+                echo -e "${RED}  DEEPX NPU requires python 3.10+ (StrEnum compatibility)${NC}"
                 echo ""
-                echo "The virtual environment needs to be recreated with Python 3.11+"
+                echo "The virtual environment needs to be recreated with python 3.10+"
                 read -p "Remove existing venv and recreate with $PYTHON_VERSION? (Y/n) " -n 1 -r
                 echo
                 if [[ $REPLY =~ ^[Nn]$ ]]; then
@@ -242,7 +270,7 @@ if [ -d "$VENV_DIR" ]; then
                     rm -rf "$VENV_DIR"
                 fi
             else
-                echo -e "${GREEN}✓ Existing venv Python version is compatible (3.11+)${NC}"
+                echo -e "${GREEN}✓ Existing venv Python version is compatible (3.10+)${NC}"
                 read -p "Remove and recreate anyway? (y/N) " -n 1 -r
                 echo
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -270,10 +298,10 @@ fi
 if [ ! -d "$VENV_DIR" ]; then
     echo -e "${YELLOW}Creating new virtual environment with $PYTHON_VERSION...${NC}"
     
-    # Create virtual environment with Python 3.11 (if available) or specified version
-    if command -v python3.11 &> /dev/null && [ "$PYTHON_VERSION" = "python3.11" ]; then
-        python3.11 -m venv "$VENV_DIR"
-        echo -e "${GREEN}✓ Using Python 3.11 for virtual environment${NC}"
+    # Create virtual environment with Python 3.10 (if available) or specified version
+    if command -v python3.10 &> /dev/null && [ "$PYTHON_VERSION" = "python3.10" ]; then
+        python3.10 -m venv "$VENV_DIR"
+        echo -e "${GREEN}✓ Using Python 3.10 for virtual environment${NC}"
     else
         $PYTHON_VERSION -m venv "$VENV_DIR"
         echo -e "${GREEN}✓ Using $PYTHON_VERSION for virtual environment${NC}"
@@ -368,7 +396,7 @@ if [ "$DOWNLOAD_MODELS" = "true" ]; then
     
     # Model URLs
     if [ "$MODEL_TYPE" = "mobile" ]; then
-        echo -e "${YELLOW}Using mobile models...${NC}"
+        echo -e "${BLUE}Using mobile models...${NC}"
         MODELS=(
             "PP-OCRv5_mobile_det:https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_mobile_det_infer.tar"
             "PP-OCRv5_mobile_rec:https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_mobile_rec_infer.tar"
@@ -377,7 +405,7 @@ if [ "$DOWNLOAD_MODELS" = "true" ]; then
             "PP-LCNet_x1_0_textline_ori:https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-LCNet_x1_0_textline_ori_infer.tar"
         )
     else
-        echo -e "${YELLOW}Using server models...${NC}"
+        echo -e "${BLUE}Using server models...${NC}"
         MODELS=(
             "PP-OCRv5_server_det:https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_server_det_infer.tar"
             "PP-OCRv5_server_rec:https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_server_rec_infer.tar"
@@ -482,40 +510,129 @@ fi
 if [ "$SETUP_NPU" = "true" ]; then
     echo -e "${YELLOW}Creating NPU environment configuration...${NC}"
     
+    # Read default values from .env.deepx if it exists
+    ENV_DEEPX_FILE="$SCRIPT_DIR/.env.deepx"
+    if [ -f "$ENV_DEEPX_FILE" ]; then
+        echo -e "${YELLOW}Reading default values from .env.deepx...${NC}"
+        DEFAULT_INTER=$(grep "^CUSTOM_INTER_OP_THREADS_COUNT=" "$ENV_DEEPX_FILE" | cut -d'=' -f2)
+        DEFAULT_INTRA=$(grep "^CUSTOM_INTRA_OP_THREADS_COUNT=" "$ENV_DEEPX_FILE" | cut -d'=' -f2)
+        DEFAULT_DYNAMIC=$(grep "^DXRT_DYNAMIC_CPU_THREAD=" "$ENV_DEEPX_FILE" | cut -d'=' -f2)
+        DEFAULT_MAX_LOAD=$(grep "^DXRT_TASK_MAX_LOAD=" "$ENV_DEEPX_FILE" | cut -d'=' -f2)
+        DEFAULT_INPUT=$(grep "^NFH_INPUT_WORKER_THREADS=" "$ENV_DEEPX_FILE" | cut -d'=' -f2)
+        DEFAULT_OUTPUT=$(grep "^NFH_OUTPUT_WORKER_THREADS=" "$ENV_DEEPX_FILE" | cut -d'=' -f2)
+        
+        # Use extracted values or fallback to hardcoded defaults
+        DEFAULT_INTER=${DEFAULT_INTER:-1}
+        DEFAULT_INTRA=${DEFAULT_INTRA:-2}
+        DEFAULT_DYNAMIC=${DEFAULT_DYNAMIC:-1}
+        DEFAULT_MAX_LOAD=${DEFAULT_MAX_LOAD:-3}
+        DEFAULT_INPUT=${DEFAULT_INPUT:-2}
+        DEFAULT_OUTPUT=${DEFAULT_OUTPUT:-4}
+    else
+        echo -e "${YELLOW}.env.deepx not found, using hardcoded defaults...${NC}"
+        DEFAULT_INTER=1
+        DEFAULT_INTRA=2
+        DEFAULT_DYNAMIC=1
+        DEFAULT_MAX_LOAD=3
+        DEFAULT_INPUT=2
+        DEFAULT_OUTPUT=4
+    fi
+    
     ENV_FILE="$SCRIPT_DIR/deepx_env.sh"
-    cat > "$ENV_FILE" << EOF
+    cat > "$ENV_FILE" << ENVEOF
 #!/bin/bash
 # DEEPX NPU Environment Configuration
 # Source this file before running the FastAPI service with NPU support
-# Usage: source ./deepx_env.sh
+# Usage: source ./deepx_env.sh [CUSTOM_INTER_OP_THREADS_COUNT] [CUSTOM_INTRA_OP_THREADS_COUNT] [DXRT_DYNAMIC_CPU_THREAD] [DXRT_TASK_MAX_LOAD] [NFH_INPUT_WORKER_THREADS] [NFH_OUTPUT_WORKER_THREADS]
+# Example: source ./deepx_env.sh 1 2 1 3 2 4
+# Default values (from .env.deepx): $DEFAULT_INTER $DEFAULT_INTRA $DEFAULT_DYNAMIC $DEFAULT_MAX_LOAD $DEFAULT_INPUT $DEFAULT_OUTPUT
+# Use -1 to unset a specific variable: source ./deepx_env.sh 1 -1 3 4 5 6
 
-# RT Optimization Settings (from dx_baidu_gui/set_env.sh)
-export CUSTOM_INTER_OP_THREADS_COUNT=${CUSTOM_INTER_OP_THREADS_COUNT}
-export CUSTOM_INTRA_OP_THREADS_COUNT=${CUSTOM_INTRA_OP_THREADS_COUNT}
+# Set default values (loaded from .env.deepx)
+DEFAULT_CUSTOM_INTER_OP_THREADS_COUNT=$DEFAULT_INTER
+DEFAULT_CUSTOM_INTRA_OP_THREADS_COUNT=$DEFAULT_INTRA
+DEFAULT_DXRT_DYNAMIC_CPU_THREAD=$DEFAULT_DYNAMIC
+DEFAULT_DXRT_TASK_MAX_LOAD=$DEFAULT_MAX_LOAD
+DEFAULT_NFH_INPUT_WORKER_THREADS=$DEFAULT_INPUT
+DEFAULT_NFH_OUTPUT_WORKER_THREADS=$DEFAULT_OUTPUT
 
-# Optional settings (uncomment and set values if needed)
-# export DXRT_DYNAMIC_CPU_THREAD=3
-# export DXRT_TASK_MAX_LOAD=4
-# export NFH_INPUT_WORKER_THREADS=5
-# export NFH_OUTPUT_WORKER_THREADS=6
+if [ "$1" = "-1" ]; then
+    unset CUSTOM_INTER_OP_THREADS_COUNT
+    echo "CUSTOM_INTER_OP_THREADS_COUNT unset"
+elif [ -n "$1" ]; then
+    export CUSTOM_INTER_OP_THREADS_COUNT=$1
+    echo "CUSTOM_INTER_OP_THREADS_COUNT=$CUSTOM_INTER_OP_THREADS_COUNT"
+else
+    export CUSTOM_INTER_OP_THREADS_COUNT=$DEFAULT_CUSTOM_INTER_OP_THREADS_COUNT
+    echo "CUSTOM_INTER_OP_THREADS_COUNT=$CUSTOM_INTER_OP_THREADS_COUNT (default)"
+fi
+if [ "$2" = "-1" ]; then
+    unset CUSTOM_INTRA_OP_THREADS_COUNT
+    echo "CUSTOM_INTRA_OP_THREADS_COUNT unset"
+elif [ -n "$2" ]; then
+    export CUSTOM_INTRA_OP_THREADS_COUNT=$2
+    echo "CUSTOM_INTRA_OP_THREADS_COUNT=$CUSTOM_INTRA_OP_THREADS_COUNT"
+else
+    export CUSTOM_INTRA_OP_THREADS_COUNT=$DEFAULT_CUSTOM_INTRA_OP_THREADS_COUNT
+    echo "CUSTOM_INTRA_OP_THREADS_COUNT=$CUSTOM_INTRA_OP_THREADS_COUNT (default)"
+fi
+if [ "$3" = "-1" ]; then
+    unset DXRT_DYNAMIC_CPU_THREAD
+    echo "DXRT_DYNAMIC_CPU_THREAD unset"
+elif [ -n "$3" ]; then
+    export DXRT_DYNAMIC_CPU_THREAD=$3
+    echo "DXRT_DYNAMIC_CPU_THREAD=$DXRT_DYNAMIC_CPU_THREAD"
+else
+    export DXRT_DYNAMIC_CPU_THREAD=$DEFAULT_DXRT_DYNAMIC_CPU_THREAD
+    echo "DXRT_DYNAMIC_CPU_THREAD=$DXRT_DYNAMIC_CPU_THREAD (default)"
+fi
+if [ "$4" = "-1" ]; then
+    unset DXRT_TASK_MAX_LOAD
+    echo "DXRT_TASK_MAX_LOAD unset"
+elif [ -n "$4" ]; then
+    export DXRT_TASK_MAX_LOAD=$4
+    echo "DXRT_TASK_MAX_LOAD=$DXRT_TASK_MAX_LOAD"
+else
+    export DXRT_TASK_MAX_LOAD=$DEFAULT_DXRT_TASK_MAX_LOAD
+    echo "DXRT_TASK_MAX_LOAD=$DXRT_TASK_MAX_LOAD (default)"
+fi
+if [ "$5" = "-1" ]; then
+    unset NFH_INPUT_WORKER_THREADS
+    echo "NFH_INPUT_WORKER_THREADS unset"
+elif [ -n "$5" ]; then
+    export NFH_INPUT_WORKER_THREADS=$5
+    echo "NFH_INPUT_WORKER_THREADS=$NFH_INPUT_WORKER_THREADS"
+else
+    export NFH_INPUT_WORKER_THREADS=$DEFAULT_NFH_INPUT_WORKER_THREADS
+    echo "NFH_INPUT_WORKER_THREADS=$NFH_INPUT_WORKER_THREADS (default)"
+fi
+if [ "$6" = "-1" ]; then
+    unset NFH_OUTPUT_WORKER_THREADS
+    echo "NFH_OUTPUT_WORKER_THREADS unset"
+elif [ -n "$6" ]; then
+    export NFH_OUTPUT_WORKER_THREADS=$6
+    echo "NFH_OUTPUT_WORKER_THREADS=$NFH_OUTPUT_WORKER_THREADS"
+else
+    export NFH_OUTPUT_WORKER_THREADS=$DEFAULT_NFH_OUTPUT_WORKER_THREADS
+    echo "NFH_OUTPUT_WORKER_THREADS=$NFH_OUTPUT_WORKER_THREADS (default)"
+fi
 
 # Library paths
-export LD_LIBRARY_PATH="\${VIRTUAL_ENV}/lib:\${LD_LIBRARY_PATH}"
-
-echo "✓ DEEPX NPU environment configured"
-echo "  CUSTOM_INTER_OP_THREADS_COUNT=\${CUSTOM_INTER_OP_THREADS_COUNT}"
-echo "  CUSTOM_INTRA_OP_THREADS_COUNT=\${CUSTOM_INTRA_OP_THREADS_COUNT}"
-EOF
+export LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib:${LD_LIBRARY_PATH}"
+ENVEOF
     
     chmod +x "$ENV_FILE"
     echo -e "${GREEN}✓ Environment configuration saved to: deepx_env.sh${NC}"
+    echo -e "${GREEN}  Default values: $DEFAULT_INTER $DEFAULT_INTRA $DEFAULT_DYNAMIC $DEFAULT_MAX_LOAD $DEFAULT_INPUT $DEFAULT_OUTPUT${NC}"
     
-    # Apply environment settings
-    source "$ENV_FILE"
+    # Apply environment settings with values from .env.deepx
+    source "$ENV_FILE" $DEFAULT_INTER $DEFAULT_INTRA $DEFAULT_DYNAMIC $DEFAULT_MAX_LOAD $DEFAULT_INPUT $DEFAULT_OUTPUT
 fi
 
 # Verify installation
-echo -e "${BLUE}=== Verifying Installation ===${NC}"
+echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║${NC}  ${BLUE}Verifying Installation${NC}                               ${GREEN}║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 
 echo -e "${YELLOW}Checking PaddleOCR...${NC}"
 python -c "import paddleocr; print(f'PaddleOCR version: {paddleocr.__version__}')" && \
@@ -541,39 +658,41 @@ if [ "$SETUP_NPU" = "true" ]; then
 fi
 
 echo ""
-echo -e "${GREEN}=== Setup Complete! ===${NC}"
+echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║${NC}  ${BLUE}✓ Setup Complete!${NC}                                     ${GREEN}║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo "Virtual environment created at: $VENV_DIR"
+echo -e "${YELLOW}Virtual environment:${NC} $VENV_DIR"
 echo ""
 if [ "$SETUP_NPU" = "true" ]; then
     echo -e "${BLUE}NPU Support Enabled:${NC}"
-    echo "  - DX_RT: $DX_RT_PATH"
-    echo "  - PyTorch: $TORCH_VERSION"
-    echo "  - dx-engine: installed via dx_rt build"
-    echo "  - Environment config: deepx_env.sh"
+    echo -e "  ${GREEN}├─${NC} DX_RT: $DX_RT_PATH"
+    echo -e "  ${GREEN}├─${NC} PyTorch: $TORCH_VERSION"
+    echo -e "  ${GREEN}├─${NC} dx-engine: installed via dx_rt build"
+    echo -e "  ${GREEN}└─${NC} Environment config: deepx_env.sh"
     echo ""
 fi
-echo "To activate the virtual environment and NPU settings:"
-echo -e "${YELLOW}  source $VENV_DIR/bin/activate${NC}"
+echo -e "${BLUE}To activate the virtual environment and NPU settings:${NC}"
+echo -e "  ${GREEN}source $VENV_DIR/bin/activate${NC}"
 if [ "$SETUP_NPU" = "true" ]; then
-    echo -e "${YELLOW}  source deepx_env.sh${NC}"
+    echo -e "  ${GREEN}source deepx_env.sh${NC}"
 fi
 echo ""
-echo "To start the OCR service:"
-echo -e "${YELLOW}  ./run.sh${NC}"
+echo -e "${BLUE}To start the OCR service:${NC}"
+echo -e "  ${GREEN}./run.sh${NC}"
 if [ "$SETUP_NPU" = "true" ]; then
     echo ""
-    echo "To test NPU functionality:"
-    echo -e "${YELLOW}  ./run_tests.sh${NC}"
+    echo -e "${BLUE}To test NPU functionality:${NC}"
+    echo -e "  ${GREEN}./run_tests.sh${NC}"
 fi
 echo ""
-echo "The service will be available at:"
-echo -e "${GREEN}  http://localhost:8080${NC}"
-echo -e "${GREEN}  API docs: http://localhost:8080/docs${NC}"
+echo -e "${BLUE}The service will be available at:${NC}"
+echo -e "  ${GREEN}http://localhost:8080${NC}"
+echo -e "  ${GREEN}http://localhost:8080/docs${NC} (API documentation)"
 echo ""
 if [ "$SETUP_NPU" = "true" ]; then
     echo -e "${BLUE}NPU API Usage:${NC}"
-    echo "  CPU mode: POST /api/v1/ocr with deepx=false (default)"
-    echo "  NPU mode: POST /api/v1/ocr with deepx=true"
+    echo -e "  ${YELLOW}CPU mode:${NC} POST /api/v1/ocr with deepx=false (default)"
+    echo -e "  ${YELLOW}NPU mode:${NC} POST /api/v1/ocr with deepx=true"
     echo ""
 fi
