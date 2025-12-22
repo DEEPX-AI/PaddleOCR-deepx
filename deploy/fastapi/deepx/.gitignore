@@ -3,3 +3,4 @@ engine/model_files/server
 engine/model_files/mobile
 .temp/
 download/
+engine/fonts/*.ttf
