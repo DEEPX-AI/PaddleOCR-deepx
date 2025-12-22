@@ -633,7 +633,7 @@ pip list | grep dx-engine
 ### 디렉토리 구조
 
 ```
-deploy/docker/fastapi/
+deploy/fastapi/
 ├── ocr_service.py           # NPU 지원 추가
 ├── local_deepx_setup.sh     # NPU 자동 설치 스크립트
 ├── .env.deepx               # RT 최적화 기본값 (마스터 설정)

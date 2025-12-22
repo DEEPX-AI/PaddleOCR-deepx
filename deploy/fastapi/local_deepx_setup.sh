@@ -6,7 +6,7 @@
 set -e  # Exit on error
 
 # Configuration
-PYTHON_VERSION="python3.10"
+PYTHON_VERSION="python3"  # Will auto-detect best available version
 VENV_DIR="venv"
 DEVICE_TYPE="cpu"  # cpu or gpu
 PADDLEOCR_VERSION="3.3.2"
@@ -103,7 +103,7 @@ while [[ $# -gt 0 ]]; do
             echo -e "  ${GREEN}--no-models${NC}          ${YELLOW}Skip downloading PaddleOCR models${NC}"
             echo -e "  ${GREEN}--no-deepx-models${NC}    ${YELLOW}Skip downloading DEEPX models${NC}"
             echo -e "  ${GREEN}--no-npu${NC}             ${YELLOW}Skip NPU setup (CPU only)${NC}"
-            echo -e "  ${GREEN}--python${NC} VERSION     ${YELLOW}Specify Python version (default: python3.10, 3.10+ required for NPU)${NC}"
+            echo -e "  ${GREEN}--python${NC} VERSION     ${YELLOW}Specify Python version (default: auto-detect, 3.10+ required for NPU)${NC}"
             echo -e "  ${GREEN}--version${NC} VERSION    ${YELLOW}Specify PaddleOCR version (default: 3.3.2)${NC}"
             echo -e "  ${GREEN}--inter-threads${NC} N    ${YELLOW}Set CUSTOM_INTER_OP_THREADS_COUNT (default: 1)${NC}"
             echo -e "  ${GREEN}--intra-threads${NC} N    ${YELLOW}Set CUSTOM_INTRA_OP_THREADS_COUNT (default: 3)${NC}"
@@ -217,7 +217,7 @@ fi
 
 # Check deepx path
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEEPX_PATH="$SCRIPT_DIR/../../../deepx"
+DEEPX_PATH="$SCRIPT_DIR/deepx"
 
 if [ "$SETUP_NPU" = "true" ]; then
     echo -e "${YELLOW}Checking deepx path...${NC}"
@@ -296,16 +296,19 @@ fi
 
 # Create venv if it doesn't exist
 if [ ! -d "$VENV_DIR" ]; then
-    echo -e "${YELLOW}Creating new virtual environment with $PYTHON_VERSION...${NC}"
-    
-    # Create virtual environment with Python 3.10 (if available) or specified version
-    if command -v python3.10 &> /dev/null && [ "$PYTHON_VERSION" = "python3.10" ]; then
-        python3.10 -m venv "$VENV_DIR"
-        echo -e "${GREEN}✓ Using Python 3.10 for virtual environment${NC}"
+    # Auto-detect best Python version if using default
+    if [ "$PYTHON_VERSION" = "python3" ]; then
+        DETECTED_VERSION=$($PYTHON_VERSION -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        echo -e "${YELLOW}Creating new virtual environment with $PYTHON_VERSION (version $DETECTED_VERSION)...${NC}"
     else
-        $PYTHON_VERSION -m venv "$VENV_DIR"
-        echo -e "${GREEN}✓ Using $PYTHON_VERSION for virtual environment${NC}"
+        echo -e "${YELLOW}Creating new virtual environment with $PYTHON_VERSION...${NC}"
     fi
+    
+    $PYTHON_VERSION -m venv "$VENV_DIR"
+    
+    # Get actual venv Python version for confirmation
+    VENV_VERSION=$($VENV_DIR/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+    echo -e "${GREEN}✓ Created virtual environment with Python $VENV_VERSION${NC}"
 else
     echo -e "${GREEN}✓ Using existing virtual environment${NC}"
 fi
@@ -337,6 +340,20 @@ if [ "$SETUP_NPU" = "true" ]; then
     if [ ! -f "$DX_RT_PATH/build.sh" ]; then
         echo -e "${RED}Error: build.sh not found in DX_RT path: $DX_RT_PATH/build.sh${NC}"
         exit 1
+    fi
+    
+    # Check if sudo is required and validate credentials early
+    echo -e "${YELLOW}DX_RT build requires sudo privileges...${NC}"
+    if ! sudo -n true 2>/dev/null; then
+        echo -e "${YELLOW}Please enter your sudo password:${NC}"
+        if ! sudo -v; then
+            echo -e "${RED}Error: Failed to obtain sudo privileges${NC}"
+            echo -e "${RED}DX_RT build cannot proceed without sudo access${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}✓ Sudo credentials validated${NC}"
+    else
+        echo -e "${GREEN}✓ Sudo credentials already cached${NC}"
     fi
     
     # Build dx_rt
@@ -441,68 +458,19 @@ fi
 
 # Download DEEPX models
 if [ "$DOWNLOAD_DEEPX_MODELS" = "true" ] && [ "$SETUP_NPU" = "true" ]; then
-    echo -e "${BLUE}=== Checking DEEPX NPU Models ===${NC}"
+    # Use common setup script
+    SETUP_MODELS_SCRIPT="$SCRIPT_DIR/setup_deepx_models.sh"
     
-    DEEPX_MODELS_DIR="$DEEPX_PATH/engine/model_files"
-    DXNN_DIR="$DEEPX_MODELS_DIR/server"
-    DXNN_MOBILE_DIR="$DEEPX_MODELS_DIR/mobile"
-    
-    NEED_SETUP=0
-    if [ ! -d "$DXNN_DIR" ]; then
-        echo -e "${YELLOW}⚠ Missing model folder: $DXNN_DIR${NC}"
-        NEED_SETUP=1
-    fi
-    if [ ! -d "$DXNN_MOBILE_DIR" ]; then
-        echo -e "${YELLOW}⚠ Missing model folder: $DXNN_MOBILE_DIR${NC}"
-        NEED_SETUP=1
+    if [ ! -f "$SETUP_MODELS_SCRIPT" ]; then
+        echo -e "${RED}Error: setup_deepx_models.sh not found at $SETUP_MODELS_SCRIPT${NC}"
+        exit 1
     fi
     
-    if [ $NEED_SETUP -eq 1 ]; then
-        # Try to find setup.sh in deepx directories
-        SETUP_SCRIPT=""
-        if [ -f "$DEEPX_PATH/setup.sh" ]; then
-            SETUP_SCRIPT="$DEEPX_PATH/setup.sh"
-        fi
-        
-        if [ -n "$SETUP_SCRIPT" ]; then
-            echo -e "${YELLOW}Running setup.sh to fetch DEEPX models...${NC}"
-            echo "Setup script: $SETUP_SCRIPT"
-            echo "Target directory: $DEEPX_MODELS_DIR"
-            
-            CURRENT_DIR="$(pwd)"
-            cd "$(dirname "$SETUP_SCRIPT")"
-            bash "$(basename "$SETUP_SCRIPT")" --dest="$DEEPX_MODELS_DIR"
-            SETUP_EXIT_CODE=$?
-            cd "$CURRENT_DIR"
-            
-            if [ $SETUP_EXIT_CODE -eq 0 ]; then
-                echo -e "${GREEN}✓ setup.sh completed successfully${NC}"
-            else
-                echo -e "${RED}Error: setup.sh failed to prepare models (exit code: $SETUP_EXIT_CODE)${NC}"
-                exit 1
-            fi
-        else
-            echo -e "${RED}Error: setup.sh not found${NC}"
-            echo "Searched locations:"
-            echo "  - $DEEPX_PATH/../dx_baidu_gui/setup.sh"
-            echo "  - $DEEPX_PATH/setup.sh"
-            echo ""
-            echo "Please provide DEEPX models manually under $DEEPX_MODELS_DIR/"
-            exit 1
-        fi
-    else
-        echo -e "${GREEN}✓ DEEPX model folders present${NC}"
-    fi
+    bash "$SETUP_MODELS_SCRIPT" --deepx-path "$DEEPX_PATH"
     
-    # Verify models were downloaded successfully
-    if [ -d "$DXNN_DIR" ] && [ -d "$DXNN_MOBILE_DIR" ]; then
-        echo -e "${GREEN}✓ DEEPX models verified in $DEEPX_MODELS_DIR${NC}"
-        echo "  Server models: ✓"
-        echo "  Mobile models: ✓"
-    else
-        echo -e "${YELLOW}⚠ DEEPX models verification incomplete${NC}"
-        echo "  Server models: $([ -d "$DXNN_DIR" ] && echo "✓" || echo "✗")"
-        echo "  Mobile models: $([ -d "$DXNN_MOBILE_DIR" ] && echo "✓" || echo "✗")"
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: DEEPX models setup failed${NC}"
+        exit 1
     fi
 fi
 
@@ -629,6 +597,23 @@ ENVEOF
     source "$ENV_FILE" $DEFAULT_INTER $DEFAULT_INTRA $DEFAULT_DYNAMIC $DEFAULT_MAX_LOAD $DEFAULT_INPUT $DEFAULT_OUTPUT
 fi
 
+# Prepare fonts for OCR visualization
+echo ""
+echo -e "${YELLOW}Preparing fonts for OCR visualization...${NC}"
+FONTS_DEST_DIR="$SCRIPT_DIR/deepx/engine/fonts"
+mkdir -p "$FONTS_DEST_DIR"
+
+# Copy fonts from doc/fonts to deepx/engine/fonts
+DOC_FONTS_DIR="$SCRIPT_DIR/../../doc/fonts"
+if [ -d "$DOC_FONTS_DIR" ]; then
+    cp -v "$DOC_FONTS_DIR"/*.ttf "$FONTS_DEST_DIR/" 2>/dev/null || true
+    echo -e "${GREEN}✓ Fonts copied to $FONTS_DEST_DIR${NC}"
+else
+    echo -e "${YELLOW}⚠️  Warning: doc/fonts directory not found at $DOC_FONTS_DIR${NC}"
+    echo -e "${YELLOW}   Skipping font copy. System fonts will be used as fallback.${NC}"
+fi
+echo ""
+
 # Verify installation
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║${NC}  ${BLUE}Verifying Installation${NC}                               ${GREEN}║${NC}"
@@ -646,7 +631,7 @@ if [ "$SETUP_NPU" = "true" ]; then
         echo -e "${GREEN}✓ PyTorch installed${NC}" || \
         echo -e "${RED}✗ PyTorch not found${NC}"
     
-    python -c "import dx_engine; print(f'dx-engine version: {dx_engine.__version__}')" && \
+    python -c "import dx_engine; print('dx-engine: installed')" && \
         echo -e "${GREEN}✓ dx-engine installed${NC}" || \
         echo -e "${RED}✗ dx-engine not found${NC}"
     

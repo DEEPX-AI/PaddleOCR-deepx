@@ -92,9 +92,17 @@ def load_npu_models_once():
     model_type = 'mobile' if use_mobile else 'server'
     
     # Import deepx engine
-    deepx_path = Path(__file__).parent.parent.parent.parent / 'deepx'
+    # Use DEEPX_PATH environment variable if set, otherwise use relative path (for local development)
+    deepx_path_str = os.getenv('DEEPX_PATH')
+    if deepx_path_str:
+        deepx_path = Path(deepx_path_str)
+    else:
+        deepx_path = Path(__file__).parent / 'deepx'
+    
     if not deepx_path.exists():
-        raise ImportError(f"deepx not found at {deepx_path}")
+        error_msg = f"DEEPX NPU not available: deepx directory not found at {deepx_path}. Please set DEEPX_PATH environment variable or ensure deepx folder is present."
+        print(f"❌ {error_msg}")
+        raise HTTPException(status_code=503, detail=error_msg)
     
     sys.path.insert(0, str(deepx_path))
     
@@ -102,7 +110,9 @@ def load_npu_models_once():
     model_dir = deepx_path / 'engine' / 'model_files' / model_type
     
     if not model_dir.exists():
-        raise ImportError(f"NPU model directory not found: {model_dir}")
+        error_msg = f"DEEPX NPU not available: NPU model directory not found at {model_dir}. Please download NPU models or build Docker image with --deepx flag."
+        print(f"❌ {error_msg}")
+        raise HTTPException(status_code=503, detail=error_msg)
     
     print(f"   Model type: {model_type}")
     print(f"   Model directory: {model_dir}")
@@ -111,9 +121,16 @@ def load_npu_models_once():
     def load_model(name):
         path = model_dir / name
         if not path.exists():
-            raise ImportError(f"Model not found: {path}")
+            error_msg = f"DEEPX NPU not available: NPU model file not found: {path}. Please download NPU models using local_deepx_setup.sh or build Docker with --deepx flag."
+            print(f"❌ {error_msg}")
+            raise HTTPException(status_code=503, detail=error_msg)
         print(f"   Loading: {name}")
-        return IE(str(path))
+        try:
+            return IE(str(path))
+        except Exception as e:
+            error_msg = f"DEEPX NPU model loading failed for {name}: {e}"
+            print(f"❌ {error_msg}")
+            raise HTTPException(status_code=503, detail=error_msg)
     
     # Detection models (640, 960)
     det_prefix = 'det_mobile' if model_type == 'mobile' else 'det_v5'
@@ -139,7 +156,9 @@ def load_npu_models_once():
     # Dictionary
     dict_path = model_dir / 'ppocrv5_dict.txt'
     if not dict_path.exists():
-        raise ImportError(f"Dictionary not found: {dict_path}")
+        error_msg = f"DEEPX NPU not available: Dictionary file not found: {dict_path}"
+        print(f"❌ {error_msg}")
+        raise HTTPException(status_code=503, detail=error_msg)
     
     _npu_models = {
         'det_models': det_models,
@@ -274,7 +293,14 @@ def _create_npu_instance(
     """
     try:
         # Import deepx engine
-        deepx_path = Path(__file__).parent.parent.parent.parent / 'deepx'
+        # Use DEEPX_PATH environment variable if set, otherwise use relative path (for local development)
+        deepx_path_str = os.getenv('DEEPX_PATH')
+        if deepx_path_str:
+            deepx_path = Path(deepx_path_str)
+        else:
+            # New location: deploy/fastapi/deepx
+            deepx_path = Path(__file__).parent / 'deepx'
+        
         if not deepx_path.exists():
             raise ImportError(f"deepx not found at {deepx_path}")
         
@@ -443,8 +469,18 @@ def get_doc_orientation_classifier():
     global doc_orientation_classifier
     if doc_orientation_classifier is None:
         try:
-            doc_orientation_classifier = DocImgOrientationClassification()
-            print("✅ DocImgOrientationClassification initialized successfully")
+            # Use pre-downloaded model directory to avoid re-download
+            models_dir = Path.home() / '.paddlex' / 'official_models'
+            doc_ori_model_dir = models_dir / 'PP-LCNet_x1_0_doc_ori'
+            
+            if doc_ori_model_dir.exists():
+                # Use local model
+                doc_orientation_classifier = DocImgOrientationClassification(model_name=str(doc_ori_model_dir))
+                print(f"✅ DocImgOrientationClassification initialized with local model: {doc_ori_model_dir}")
+            else:
+                # Fallback to auto-download
+                doc_orientation_classifier = DocImgOrientationClassification()
+                print("✅ DocImgOrientationClassification initialized (downloaded)")
         except Exception as e:
             print(f"⚠️ Warning: Could not initialize DocImgOrientationClassification: {e}")
             doc_orientation_classifier = None
@@ -455,8 +491,18 @@ def get_doc_unwarping_model():
     global doc_unwarping_model
     if doc_unwarping_model is None:
         try:
-            doc_unwarping_model = TextImageUnwarping()
-            print("✅ TextImageUnwarping initialized successfully")
+            # Use pre-downloaded model directory to avoid re-download
+            models_dir = Path.home() / '.paddlex' / 'official_models'
+            uvdoc_model_dir = models_dir / 'UVDoc'
+            
+            if uvdoc_model_dir.exists():
+                # Use local model
+                doc_unwarping_model = TextImageUnwarping(model_name=str(uvdoc_model_dir))
+                print(f"✅ TextImageUnwarping initialized with local model: {uvdoc_model_dir}")
+            else:
+                # Fallback to auto-download
+                doc_unwarping_model = TextImageUnwarping()
+                print("✅ TextImageUnwarping initialized (downloaded)")
         except Exception as e:
             print(f"⚠️ Warning: Could not initialize TextImageUnwarping: {e}")
             doc_unwarping_model = None
@@ -466,8 +512,53 @@ def get_doc_unwarping_model():
 # OCR Visualization Utilities (from PaddleOCR tools/infer/utility.py)
 # ============================================================================
 
-def create_font(txt, sz, font_path="./doc/fonts/simfang.ttf"):
+def get_font_path(font_name="simfang.ttf"):
+    """
+    Get font path with fallback logic
+    Priority:
+    1. FONT_PATH environment variable
+    2. DEEPX_PATH/engine/fonts
+    3. Relative path: deepx/engine/fonts
+    4. System fonts
+    """
+    # 1. Check FONT_PATH environment variable
+    font_path_env = os.getenv('FONT_PATH')
+    if font_path_env:
+        font_file = Path(font_path_env) / font_name
+        if font_file.exists():
+            return str(font_file)
+    
+    # 2. Check DEEPX_PATH/engine/fonts
+    deepx_path_str = os.getenv('DEEPX_PATH')
+    if deepx_path_str:
+        font_file = Path(deepx_path_str) / 'engine' / 'fonts' / font_name
+        if font_file.exists():
+            return str(font_file)
+    
+    # 3. Check relative path
+    font_file = Path(__file__).parent / 'deepx' / 'engine' / 'fonts' / font_name
+    if font_file.exists():
+        return str(font_file)
+    
+    # 4. Fallback to old location (for backward compatibility)
+    font_file = Path(__file__).parent.parent.parent / 'doc' / 'fonts' / font_name
+    if font_file.exists():
+        return str(font_file)
+    
+    # 5. System font fallback
+    system_font = Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
+    if system_font.exists():
+        return str(system_font)
+    
+    # Last resort: return default path (ImageFont.load_default will be used)
+    return str(Path(__file__).parent / 'deepx' / 'engine' / 'fonts' / font_name)
+
+def create_font(txt, sz, font_path=None):
     """Create font for text rendering"""
+    # Get font path if not provided
+    if font_path is None:
+        font_path = get_font_path()
+    
     font_size = int(sz[1] * 0.99)
     try:
         font = ImageFont.truetype(font_path, font_size, encoding="utf-8")
@@ -490,8 +581,12 @@ def create_font(txt, sz, font_path="./doc/fonts/simfang.ttf"):
     return font
 
 
-def draw_box_txt_fine(img_size, box, txt, font_path="./doc/fonts/simfang.ttf"):
+def draw_box_txt_fine(img_size, box, txt, font_path=None):
     """Draw text in box with perspective transformation"""
+    # Get font path if not provided
+    if font_path is None:
+        font_path = get_font_path()
+    
     box_height = int(
         math.sqrt((box[0][0] - box[3][0]) ** 2 + (box[0][1] - box[3][1]) ** 2)
     )
@@ -537,12 +632,16 @@ def draw_ocr_box_txt(
     txts=None,
     scores=None,
     drop_score=0.5,
-    font_path="./doc/fonts/simfang.ttf",
+    font_path=None,
 ):
     """
     Visualize OCR results with boxes and text
     Returns: numpy array with visualization (width * 2, height) showing original and text overlay
     """
+    # Get font path if not provided
+    if font_path is None:
+        font_path = get_font_path()
+    
     h, w = image.height, image.width
     img_left = image.copy()
     img_right = np.ones((h, w, 3), dtype=np.uint8) * 255
@@ -559,7 +658,9 @@ def draw_ocr_box_txt(
         img_right_text = draw_box_txt_fine((w, h), box, txt, font_path)
         pts = np.array(box, np.int32).reshape((-1, 1, 2))
         cv2.polylines(img_right_text, [pts], True, color, 1)
-        img_right = cv2.bitwise_and(img_right, img_right_text)
+        # Copy text (non-white pixels) to img_right
+        mask = img_right_text < 255
+        img_right[mask] = img_right_text[mask]
     img_left = Image.blend(image, img_left, 0.5)
     img_show = Image.new("RGB", (w * 2, h), (255, 255, 255))
     img_show.paste(img_left, (0, 0, w, h))
@@ -741,6 +842,15 @@ def get_ocr_instance(
             ocr_params['text_recognition_model_name'] = model_paths['rec_model_name']
         if model_paths['rec_model_dir']:
             ocr_params['text_recognition_model_dir'] = model_paths['rec_model_dir']
+        
+        # Add textline orientation model if it exists and is enabled
+        if use_textline_orientation:
+            models_dir = Path.home() / '.paddlex' / 'official_models'
+            textline_ori_model_dir = models_dir / 'PP-LCNet_x1_0_textline_ori'
+            if textline_ori_model_dir.exists():
+                ocr_params['textline_orientation_model_name'] = 'PP-LCNet_x1_0_textline_ori'
+                ocr_params['textline_orientation_model_dir'] = str(textline_ori_model_dir)
+                print(f"   Using pre-downloaded textline orientation model: {textline_ori_model_dir}")
         
         ocr_instances[cache_key] = PaddleOCR(**ocr_params)
         print(f"✅ PaddleOCR initialized successfully with {model_paths['model_type']} models")
@@ -1072,21 +1182,8 @@ def create_visualization(preprocessing_img: np.ndarray, ocr_results: List[Dict])
         OCR boxes are in preprocessing_img coordinates for both CPU and NPU
         because OCR is performed on the preprocessed image.
     """
-    # Get font path - try multiple locations
-    font_path = None
-    possible_font_paths = [
-        Path(__file__).parent.parent.parent.parent / 'doc' / 'fonts' / 'simfang.ttf',
-        Path(__file__).parent.parent.parent.parent / 'doc' / 'fonts' / 'chinese_cht.ttf',
-        Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
-    ]
-    
-    for path in possible_font_paths:
-        if path.exists():
-            font_path = str(path)
-            break
-    
-    if font_path is None:
-        font_path = './doc/fonts/simfang.ttf'  # fallback
+    # Get font path using unified function
+    font_path = get_font_path()
     
     # Convert preprocessing image to PIL Image for visualization
     if isinstance(preprocessing_img, np.ndarray):

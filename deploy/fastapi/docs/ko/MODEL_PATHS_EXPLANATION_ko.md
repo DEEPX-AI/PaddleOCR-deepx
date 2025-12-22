@@ -272,4 +272,4 @@ docker logs ocr-fastapi | grep "Initializing PaddleOCR"
 - [PaddleOCR 3.x 문서](https://github.com/PaddlePaddle/PaddleOCR)
 - [PP-OCRv5 모델 다운로드](https://github.com/PaddlePaddle/PaddleOCR/blob/main/doc/doc_en/models_list_en.md)
 - `paddleocr/_pipelines/ocr.py` - PaddleOCR 클래스 구현
-- `deploy/docker/fastapi/Dockerfile` - 모델 다운로드 로직
+- `deploy/fastapi/Dockerfile` - 모델 다운로드 로직

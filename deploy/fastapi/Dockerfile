@@ -1,6 +1,6 @@
 # PaddleOCR Simple OCR Service with FastAPI
 # Based on PaddlePaddle 3.x and PaddleOCR 3.3.2 with PP-OCRv5
-FROM python:3.10-slim
+FROM python:3.10.16-slim
 
 ARG SETUP_DEEPX="false"
 
@@ -17,27 +17,22 @@ RUN apt-get update \
         libglib2.0-0 \
         libgomp1 \
         wget \
+        curl \
         $(if [ "${SETUP_DEEPX}" = "true" ]; then echo "build-essential git"; fi) \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PaddlePaddle (choose CPU or GPU version)
 ARG DEVICE_TYPE="cpu"
 RUN if [ "${DEVICE_TYPE}" = "gpu" ]; then \
-        python -m pip install paddlepaddle-gpu==3.0.0; \
+        python -m pip install "paddlepaddle-gpu==3.0.0" "numpy<2.0.0"; \
     else \
-        python -m pip install paddlepaddle==3.0.0; \
+        python -m pip install "paddlepaddle==3.0.0" "numpy<2.0.0"; \
     fi
 
-# Install PaddleOCR and FastAPI
-ARG PADDLEOCR_VERSION="3.3.2"
-ARG SETUP_DEEPX="false"
-RUN python -m pip install paddleocr==${PADDLEOCR_VERSION} \
-    fastapi==0.109.0 \
-    uvicorn[standard]==0.27.0 \
-    python-multipart==0.0.6 \
-    pillow \
-    opencv-python-headless
-
+# Copy requirements.txt and install dependencies
+COPY requirements.txt /tmp/requirements.txt
+RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 # Install DEEPX NPU dependencies if enabled
 RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
         python -m pip install \
@@ -50,7 +45,8 @@ RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
             imgaug \
             shapely \
             pyclipper \
-            jiwer; \
+            jiwer;\
+        python -m pip install "numpy<2.0.0"; \
     fi
 
 # Create working directory
@@ -60,6 +56,61 @@ WORKDIR /app
 RUN groupadd -g 1000 paddleocr \
     && useradd -m -s /bin/bash -u 1000 -g 1000 paddleocr \
     && chown -R paddleocr:paddleocr /app
+
+# Copy DEEPX engine if enabled
+ARG SETUP_DEEPX="false"
+RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
+        mkdir -p /app/deepx; \
+    fi
+
+COPY deepx/ /app/deepx/
+
+# Download DEEPX models if enabled (run as root before USER paddleocr)
+RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
+        echo "=== DEEPX NPU Models Setup ===" && \
+        DEEPX_MODELS_DIR="/app/deepx/engine/model_files" && \
+        DXNN_DIR="$DEEPX_MODELS_DIR/server" && \
+        DXNN_MOBILE_DIR="$DEEPX_MODELS_DIR/mobile" && \
+        NEED_SETUP=0 && \
+        if [ ! -d "$DXNN_DIR" ]; then \
+            echo "Missing model folder: $DXNN_DIR" && \
+            NEED_SETUP=1; \
+        fi && \
+        if [ ! -d "$DXNN_MOBILE_DIR" ]; then \
+            echo "Missing model folder: $DXNN_MOBILE_DIR" && \
+            NEED_SETUP=1; \
+        fi && \
+        if [ $NEED_SETUP -eq 1 ]; then \
+            if [ -f "/app/deepx/setup.sh" ]; then \
+                echo "Running setup.sh to fetch DEEPX models..." && \
+                cd /app/deepx && \
+                mkdir -p download .temp/download && \
+                rm -rf .temp/download/* && \
+                bash setup.sh --dest="$DEEPX_MODELS_DIR" && \
+                echo "DEEPX models setup completed" && \
+                if [ -d "$DXNN_DIR" ] && [ -d "$DXNN_MOBILE_DIR" ]; then \
+                    echo "Models verified: server and mobile"; \
+                else \
+                    echo "Error: Models verification failed" && exit 1; \
+                fi; \
+            else \
+                echo "Error: setup.sh not found at /app/deepx/setup.sh" && \
+                echo "Please ensure deepx folder contains setup.sh" && \
+                exit 1; \
+            fi; \
+        else \
+            echo "DEEPX model folders already present"; \
+        fi; \
+    fi
+
+# Set ownership after model download
+RUN chown -R paddleocr:paddleocr /app/deepx
+
+# Set DEEPX_PATH environment variable
+ENV DEEPX_PATH=/app/deepx
+
+# Set FONT_PATH environment variable
+ENV FONT_PATH=/app/deepx/engine/fonts
 
 USER paddleocr
 

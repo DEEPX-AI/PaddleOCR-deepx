@@ -35,7 +35,7 @@ Comprehensive pytest test suite for the PaddleOCR FastAPI service, covering all 
 ### 1. Install Test Dependencies
 
 ```bash
-cd /dataPaddleOCR/deploy/docker/fastapi
+cd /dataPaddleOCR/deploy/fastapi
 pip install -r test_requirements.txt
 ```
 
@@ -55,7 +55,7 @@ The service must be running before executing tests. Default port is `8080` (can 
 docker run -d -p 8080:8080 --name ocr-fastapi paddleocr-fastapi-service:latest
 
 # Or run locally
-cd /dataPaddleOCR/deploy/docker/fastapi
+cd /dataPaddleOCR/deploy/fastapi
 ./run.sh
 ```
 
@@ -243,7 +243,7 @@ All Baidu API parameter tests iterate over all images, ensuring comprehensive co
 
 All Baidu API tests automatically save visualization images to:
 ```
-deploy/docker/fastapi/test_outputs/{TC_NAME}/{BACKEND}/
+deploy/fastapi/test_outputs/{TC_NAME}/{BACKEND}/
 ```
 
 Where:
@@ -453,7 +453,7 @@ jobs:
     
     - name: Build Docker image
       run: |
-        cd deploy/docker/fastapi
+        cd deploy/fastapi
         bash build.sh --no-models
     
     - name: Start service
@@ -463,12 +463,12 @@ jobs:
     
     - name: Install test dependencies
       run: |
-        cd deploy/docker/fastapi
+        cd deploy/fastapi
         pip install -r test_requirements.txt
     
     - name: Run tests
       run: |
-        cd deploy/docker/fastapi
+        cd deploy/fastapi
         pytest test_ocr_service.py -v --cov=ocr_service --cov-report=xml
     
     - name: Upload coverage

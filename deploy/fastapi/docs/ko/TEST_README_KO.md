@@ -35,7 +35,7 @@ PaddleOCR FastAPI 서비스의 모든 엔드포인트와 Baidu AI Studio 호환 
 ### 1. 테스트 의존성 설치
 
 ```bash
-cd /dataPaddleOCR/deploy/docker/fastapi
+cd /dataPaddleOCR/deploy/fastapi
 pip install -r test_requirements.txt
 ```
 
@@ -55,7 +55,7 @@ pip install pytest pytest-timeout pytest-cov requests
 docker run -d -p 8080:8080 --name ocr-fastapi paddleocr-fastapi-service:latest
 
 # 또는 로컬 실행
-cd /dataPaddleOCR/deploy/docker/fastapi
+cd /dataPaddleOCR/deploy/fastapi
 ./run.sh
 ```
 
@@ -243,7 +243,7 @@ TestPerformanceAndEdgeCases
 
 모든 Baidu API 테스트는 시각화 이미지를 자동으로 저장합니다:
 ```
-deploy/docker/fastapi/test_outputs/{TC_NAME}/{BACKEND}/
+deploy/fastapi/test_outputs/{TC_NAME}/{BACKEND}/
 ```
 
 여기서:
@@ -453,7 +453,7 @@ jobs:
     
     - name: Build Docker image
       run: |
-        cd deploy/docker/fastapi
+        cd deploy/fastapi
         bash build.sh --no-models
     
     - name: Start service
@@ -463,12 +463,12 @@ jobs:
     
     - name: Install test dependencies
       run: |
-        cd deploy/docker/fastapi
+        cd deploy/fastapi
         pip install -r test_requirements.txt
     
     - name: Run tests
       run: |
-        cd deploy/docker/fastapi
+        cd deploy/fastapi
         pytest test_ocr_service.py -v --cov=ocr_service --cov-report=xml
     
     - name: Upload coverage
