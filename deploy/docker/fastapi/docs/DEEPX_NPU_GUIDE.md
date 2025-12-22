@@ -28,7 +28,7 @@ Use the DEEPX NPU dedicated setup script to automatically install all dependenci
 ```
 
 **What the setup script automatically does:**
-- ✅ Create and activate Python 3.11+ venv
+- ✅ Create and activate python 3.10+ venv
 - ✅ Build DX_RT (auto-install dx-engine)
 - ✅ Install PaddlePaddle 3.0.0
 - ✅ Install PyTorch 2.3.0 + torchvision + torchaudio
@@ -131,7 +131,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
 ./local_deepx_setup.sh --dx_rt /path/to/dx_rt --gpu
 
 # Specify Python version
-./local_deepx_setup.sh --dx_rt /path/to/dx_rt --python python3.11
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt --python python3.10
 ```
 
 ### All Options
@@ -144,7 +144,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
 | `--no-models` | Skip PaddleOCR model download | false |
 | `--no-deepx-models` | Skip DEEPX model download | false |
 | `--no-npu` | Skip NPU setup (CPU only) | false |
-| `--python VERSION` | Specify Python version | python3.11 |
+| `--python VERSION` | Specify Python version | python3.10 |
 | `--version VERSION` | Specify PaddleOCR version | 3.3.2 |
 | `--inter-threads N` | CUSTOM_INTER_OP_THREADS_COUNT | 1 |
 | `--intra-threads N` | CUSTOM_INTRA_OP_THREADS_COUNT | 3 |
@@ -193,27 +193,54 @@ Build results:
 
 Ported deepx's environment configuration logic to `deepx_env.sh`:
 
+**Configuration Files:**
+- `.env.deepx`: Master configuration file with default RT optimization values
+- `deepx_env.sh`: Auto-generated script that reads defaults from `.env.deepx`
+
+**Generated file (.env.deepx):**
+```bash
+# DEEPX NPU Environment Variables
+# Auto-generated from deepx_env.sh
+# Used by VS Code debugger launch configurations
+# Default values: 1 2 1 3 2 4
+
+# RT Optimization Settings (Default values from deepx_env.sh)
+CUSTOM_INTER_OP_THREADS_COUNT=1
+CUSTOM_INTRA_OP_THREADS_COUNT=2
+DXRT_DYNAMIC_CPU_THREAD=1
+DXRT_TASK_MAX_LOAD=3
+NFH_INPUT_WORKER_THREADS=2
+NFH_OUTPUT_WORKER_THREADS=4
+```
+
 **Generated file (deepx_env.sh):**
 ```bash
 #!/bin/bash
 # DEEPX NPU Environment Configuration
+# Source this file before running the FastAPI service with NPU support
+# Usage: source ./deepx_env.sh [CUSTOM_INTER_OP_THREADS_COUNT] [CUSTOM_INTRA_OP_THREADS_COUNT] [DXRT_DYNAMIC_CPU_THREAD] [DXRT_TASK_MAX_LOAD] [NFH_INPUT_WORKER_THREADS] [NFH_OUTPUT_WORKER_THREADS]
+# Example: source ./deepx_env.sh 1 2 1 3 2 4
+# Default values (from .env.deepx): 1 2 1 3 2 4
 
-# RT Optimization Settings
-export CUSTOM_INTER_OP_THREADS_COUNT=1
-export CUSTOM_INTRA_OP_THREADS_COUNT=3
+# Set default values (loaded from .env.deepx)
+DEFAULT_CUSTOM_INTER_OP_THREADS_COUNT=1
+DEFAULT_CUSTOM_INTRA_OP_THREADS_COUNT=2
+DEFAULT_DXRT_DYNAMIC_CPU_THREAD=1
+DEFAULT_DXRT_TASK_MAX_LOAD=3
+DEFAULT_NFH_INPUT_WORKER_THREADS=2
+DEFAULT_NFH_OUTPUT_WORKER_THREADS=4
 
-# Optional settings (uncomment if needed)
-# export DXRT_DYNAMIC_CPU_THREAD=3
-# export DXRT_TASK_MAX_LOAD=4
-# export NFH_INPUT_WORKER_THREADS=5
-# export NFH_OUTPUT_WORKER_THREADS=6
+if [ "$1" = "-1" ]; then
+    unset CUSTOM_INTER_OP_THREADS_COUNT
+elif [ -n "$1" ]; then
+    export CUSTOM_INTER_OP_THREADS_COUNT=$1
+else
+    export CUSTOM_INTER_OP_THREADS_COUNT=$DEFAULT_CUSTOM_INTER_OP_THREADS_COUNT
+fi
+# ... (similar logic for other variables)
 
 # Library paths
 export LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib:${LD_LIBRARY_PATH}"
-
-echo "✓ DEEPX NPU environment configured"
-echo "  CUSTOM_INTER_OP_THREADS_COUNT=${CUSTOM_INTER_OP_THREADS_COUNT}"
-echo "  CUSTOM_INTRA_OP_THREADS_COUNT=${CUSTOM_INTRA_OP_THREADS_COUNT}"
 ```
 
 ### 4. Automatic Environment Application (run.sh)
@@ -238,26 +265,35 @@ fi
 
 | Variable | Default | Description | Source |
 |----------|---------|-------------|--------|
-| `CUSTOM_INTER_OP_THREADS_COUNT` | 1 | Inter-op thread count | deepx/set_env.sh |
-| `CUSTOM_INTRA_OP_THREADS_COUNT` | 3 | Intra-op thread count | deepx/set_env.sh |
-| `DXRT_DYNAMIC_CPU_THREAD` | - | Dynamic CPU thread | deepx/set_env.sh |
-| `DXRT_TASK_MAX_LOAD` | - | Maximum task load | deepx/set_env.sh |
-| `NFH_INPUT_WORKER_THREADS` | - | Input worker threads | deepx/set_env.sh |
-| `NFH_OUTPUT_WORKER_THREADS` | - | Output worker threads | deepx/set_env.sh |
-| `LD_LIBRARY_PATH` | ${VIRTUAL_ENV}/lib:... | Library path | deepx/startup.sh |
+| `CUSTOM_INTER_OP_THREADS_COUNT` | 1 | Inter-op thread count | .env.deepx |
+| `CUSTOM_INTRA_OP_THREADS_COUNT` | 2 | Intra-op thread count | .env.deepx |
+| `DXRT_DYNAMIC_CPU_THREAD` | 1 | Dynamic CPU thread | .env.deepx |
+| `DXRT_TASK_MAX_LOAD` | 3 | Maximum task load | .env.deepx |
+| `NFH_INPUT_WORKER_THREADS` | 2 | Input worker threads | .env.deepx |
+| `NFH_OUTPUT_WORKER_THREADS` | 4 | Output worker threads | .env.deepx |
+| `LD_LIBRARY_PATH` | ${VIRTUAL_ENV}/lib:... | Library path | deepx_env.sh |
+
+**Default Values (1 2 1 3 2 4):**
+All default values are defined in `.env.deepx` and automatically loaded by `deepx_env.sh`.
 
 ### Customization
 
-Specify as options during installation or edit `deepx_env.sh` directly:
+You can customize RT optimization values in three ways:
 
 ```bash
-# Method 1: Specify during installation
+# Method 1: Edit .env.deepx (Recommended - affects all scripts)
+vi .env.deepx
+# Then run setup to regenerate deepx_env.sh
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt
+
+# Method 2: Specify during installation
 ./local_deepx_setup.sh --dx_rt /path/to/dx_rt --inter-threads 2 --intra-threads 4
 
-# Method 2: Edit deepx_env.sh and apply
-vi deepx_env.sh
-source deepx_env.sh
+# Method 3: Pass parameters when sourcing deepx_env.sh
+source deepx_env.sh 1 2 1 3 2 4
 ```
+
+**Note:** Method 1 is recommended as it ensures consistency across all execution environments (run.sh, VS Code debugger, etc.).
 
 ---
 
@@ -444,16 +480,16 @@ print(response.json())
 **Symptoms:**
 ```
 Error: Python 3.10 is too old for DEEPX NPU support
-Python 3.11+ is REQUIRED for DEEPX NPU
+python 3.10+ is REQUIRED for DEEPX NPU
 ```
 
 **Solution:**
 ```bash
-# Install Python 3.11
-sudo apt install python3.11
+# Install python 3.10
+sudo apt install python3.10
 
-# Or reinstall with Python 3.11
-./local_deepx_setup.sh --dx_rt /path/to/dx_rt --python python3.11
+# Or reinstall with python 3.10
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt --python python3.10
 ```
 
 ### 2. dx_rt Path Error
@@ -521,16 +557,16 @@ pip install dx-engine==1.1.2
 
 **Symptoms:**
 ```
-❌ deepx not found at /data/home/dhyang/git/github/PaddleOCR/deepx
+❌ deepx not found at /dataPaddleOCR/deepx
 ```
 
 **Solution:**
 ```bash
 # Verify path
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/engine/
+ls -la /dataPaddleOCR/deepx/engine/
 
 # Check symbolic link
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx
+ls -la /dataPaddleOCR/deepx
 ```
 
 ### 7. DEEPX Models Missing
@@ -543,8 +579,8 @@ ls -la /data/home/dhyang/git/github/PaddleOCR/deepx
 **Solution:**
 ```bash
 # Verify models
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/engine/model_files/server/
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/engine/model_files/mobile/
+ls -la /dataPaddleOCR/deepx/engine/model_files/server/
+ls -la /dataPaddleOCR/deepx/engine/model_files/mobile/
 
 # If models are missing, they need to be placed in deepx/engine/model_files
 ```
@@ -558,10 +594,13 @@ ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/engine/model_files/mobile/
 ```bash
 # Verify environment variables
 echo $CUSTOM_INTER_OP_THREADS_COUNT  # 1
-echo $CUSTOM_INTRA_OP_THREADS_COUNT  # 3
+echo $CUSTOM_INTRA_OP_THREADS_COUNT  # 2
 
-# Manual application
+# Manual application (uses defaults from .env.deepx)
 source deepx_env.sh
+
+# Or with custom values
+source deepx_env.sh 1 2 1 3 2 4
 
 # Restart service
 ./run.sh
@@ -597,7 +636,8 @@ pip list | grep dx-engine
 deploy/docker/fastapi/
 ├── ocr_service.py           # NPU support added
 ├── local_deepx_setup.sh     # NPU automatic installation script
-├── deepx_env.sh             # RT optimization environment variables (auto-generated)
+├── .env.deepx               # RT optimization default values (master config)
+├── deepx_env.sh             # RT optimization script (auto-generated from .env.deepx)
 ├── run.sh                   # Service startup (auto-applies deepx_env.sh)
 └── docs/
     ├── DEEPX_NPU_GUIDE.md       # This file

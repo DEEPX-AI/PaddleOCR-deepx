@@ -13,3 +13,6 @@ htmlcov/
 # Test reports
 report.html
 report.json
+
+# Program generated files
+deepx_env.sh

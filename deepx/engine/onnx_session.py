@@ -9,7 +9,18 @@ import torch
 from onnx import ModelProto
 from onnxruntime import InferenceSession
 
-from enum import StrEnum
+# Python 3.10 compatibility: StrEnum backport
+try:
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
+    class StrEnum(str, Enum):
+        """StrEnum backport for Python < 3.11"""
+        def __str__(self) -> str:
+            return str(self.value)
+        
+        def _generate_next_value_(name, start, count, last_values):
+            return name
 
 def torch_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     return tensor.detach().cpu().numpy()
