@@ -50,8 +50,14 @@ if CUSTOM_INPUT:
                             [f.name for f in IMAGES_DIR.glob("*.jpg")] +
                             [f.name for f in IMAGES_DIR.glob("*.jpeg")])
 else:
-    # Default to deepx/images
-    IMAGES_DIR = Path(__file__).parent.parent.parent.parent / "deepx" / "images"
+    # Use DEEPX_PATH environment variable if set, otherwise use relative path (for local development)
+    deepx_path_str = os.getenv('DEEPX_PATH')
+    if deepx_path_str:
+        deepx_path = Path(deepx_path_str)
+    else:
+        deepx_path = Path(__file__).parent / "deepx"
+    
+    IMAGES_DIR = deepx_path / "images"
     TEST_IMAGES = sorted([f.name for f in IMAGES_DIR.glob("*.png")])
 
 # Support image limit via environment variable
@@ -99,6 +105,8 @@ def wait_for_service():
 @pytest.fixture(scope="session")
 def test_image_path():
     """Get path to first test image"""
+    if not TEST_IMAGES:
+        pytest.skip(f"No test images found in {IMAGES_DIR}")
     img_path = IMAGES_DIR / TEST_IMAGES[0]
     assert img_path.exists(), f"Test image not found: {img_path}"
     return img_path
@@ -443,10 +451,12 @@ class TestBaiduOCRAPI:
 class TestFastAPIOCR:
     """FastAPI native OCR endpoint tests"""
     
-    def test_fastapi_ocr_with_url(self, wait_for_service, sample_image_url):
+    def test_fastapi_ocr_with_url(self, wait_for_service, sample_image_url, use_deepx, use_sync):
         """Test FastAPI OCR with image URL"""
         payload = {
-            "url": sample_image_url
+            "url": sample_image_url,
+            "deepx": use_deepx,
+            "sync": use_sync
         }
         
         response = requests.post(f"{BASE_URL}/fastapi/ocr", json=payload)
@@ -691,12 +701,16 @@ class TestAPIDocumentation:
 class TestPerformanceAndEdgeCases:
     """Performance and edge case tests"""
     
-    def test_concurrent_requests(self, wait_for_service, test_image_base64):
+    def test_concurrent_requests(self, wait_for_service, test_image_base64, use_deepx, use_sync):
         """Test multiple concurrent requests"""
         import concurrent.futures
         
         def make_request():
-            payload = {"image": test_image_base64}
+            payload = {
+                "image": test_image_base64,
+                "deepx": use_deepx,
+                "sync": use_sync
+            }
             response = requests.post(f"{BASE_URL}/fastapi/ocr", json=payload)
             return response.status_code == 200
         
@@ -709,7 +723,7 @@ class TestPerformanceAndEdgeCases:
         assert all(results), "Some concurrent requests failed"
         print(f"✅ Concurrent requests test passed (5 requests)")
     
-    def test_large_image_handling(self, wait_for_service):
+    def test_large_image_handling(self, wait_for_service, use_deepx, use_sync):
         """Test OCR with large image (if available)"""
         # Try to find a larger image
         large_images = list(IMAGES_DIR.glob("*.png"))
@@ -720,20 +734,26 @@ class TestPerformanceAndEdgeCases:
         with open(img_path, 'rb') as f:
             img_b64 = base64.b64encode(f.read()).decode('utf-8')
         
-        payload = {"image": img_b64}
+        payload = {
+            "image": img_b64,
+            "deepx": use_deepx,
+            "sync": use_sync
+        }
         response = requests.post(f"{BASE_URL}/fastapi/ocr", json=payload)
         
         assert response.status_code == 200
         print(f"✅ Large image handling test passed")
     
-    def test_ocr_instance_caching(self, wait_for_service, test_image_base64):
+    def test_ocr_instance_caching(self, wait_for_service, test_image_base64, use_deepx, use_sync):
         """Test that OCR instances are properly cached"""
         # Make multiple requests with same parameters
         payload = {
             "file": test_image_base64,
             "fileType": 1,
             "textDetLimitSideLen": 960,
-            "textDetThresh": 0.3
+            "textDetThresh": 0.3,
+            "deepx": use_deepx,
+            "sync": use_sync
         }
         
         # First request (creates instance)

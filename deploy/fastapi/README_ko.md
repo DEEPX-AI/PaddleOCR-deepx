@@ -6,7 +6,7 @@ PaddlePaddle 3.0 기반의 FastAPI를 사용한 OCR REST API 서비스입니다.
 
 ### 로컬 환경 (개발/테스트)
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 
 # 1. 환경 설정 (최초 1회만)
 ./local_setup.sh
@@ -17,7 +17,7 @@ cd PaddleOCR/deploy/docker/fastapi
 
 ### 로컬 환경 with DEEPX NPU (하드웨어 가속)
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 
 # 1. NPU 환경 설정 (최초 1회만)
 ./local_deepx_setup.sh --dx_rt /path/to/dx_rt
@@ -30,7 +30,7 @@ cd PaddleOCR/deploy/docker/fastapi
 
 ### Docker 환경 (운영/배포)
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 
 # 빌드 + 실행을 한 번에
 ./docker_run.sh
@@ -46,7 +46,7 @@ cd PaddleOCR/deploy/docker/fastapi
 
 **기본 설정 (CPU + Mobile 모델):**
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 chmod +x local_setup.sh
 ./local_setup.sh
 ```
@@ -171,7 +171,7 @@ venv/bin/python ocr_service.py
 
 **기본 실행 (CPU + Mobile 모델):**
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 chmod +x docker_run.sh
 ./docker_run.sh
 ```
@@ -212,7 +212,7 @@ chmod +x docker_run.sh
 
 **CPU 버전 (모델 포함):**
 ```bash
-cd PaddleOCR/deploy/docker/fastapi
+cd PaddleOCR/deploy/fastapi
 chmod +x docker_build.sh
 ./docker_build.sh
 ```
@@ -773,7 +773,7 @@ async def ocr_image(...):
 ## � 스크립트 파일 구조
 
 ```
-deploy/docker/fastapi/
+deploy/fastapi/
 ├── local_setup.sh      # 로컬 환경 설정 (venv 생성, 의존성 설치)
 ├── run.sh              # 로컬 서버 실행
 ├── docker_build.sh     # Docker 이미지 빌드

@@ -105,6 +105,7 @@ echo -e "${YELLOW}Image:${NC}          $FULL_IMAGE"
 echo -e "${YELLOW}Container:${NC}      $CONTAINER_NAME"
 echo -e "${YELLOW}Port Mapping:${NC}   $HOST_PORT -> $CONTAINER_PORT"
 echo -e "${YELLOW}GPU Mode:${NC}       $GPU_MODE"
+echo -e "${YELLOW}DEEPX NPU:${NC}      $DEEPX_MODE"
 echo -e "${GREEN}========================================${NC}"
 
 # Check if image exists
@@ -137,18 +138,38 @@ echo ""
 echo -e "${BLUE}🚀 Starting container...${NC}"
 echo ""
 
+# Build docker run command based on options
+DOCKER_RUN_CMD="docker run -d"
+
+# Add GPU support if enabled
 if [ "$GPU_MODE" = "true" ]; then
-    docker run -d \
-        --gpus all \
-        -p "${HOST_PORT}:${CONTAINER_PORT}" \
-        --name "$CONTAINER_NAME" \
-        "$FULL_IMAGE"
-else
-    docker run -d \
-        -p "${HOST_PORT}:${CONTAINER_PORT}" \
-        --name "$CONTAINER_NAME" \
-        "$FULL_IMAGE"
+    DOCKER_RUN_CMD="$DOCKER_RUN_CMD --gpus all"
 fi
+
+# Add DEEPX NPU support if enabled (from dx-runtime docker-compose.yml)
+if [ "$DEEPX_MODE" = "true" ]; then
+    echo -e "${YELLOW}Enabling DEEPX NPU support...${NC}"
+    DOCKER_RUN_CMD="$DOCKER_RUN_CMD \
+        --ipc=host \
+        --pid=host \
+        -it \
+        --privileged \
+        --device=/dev:/dev \
+        -v /dev:/dev \
+        -v /etc/machine-id:/etc/machine-id:ro \
+        -v /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket \
+        -v /run/dbus:/run/dbus \
+        -v /var/lib/dbus:/var/lib/dbus"
+fi
+
+# Add common options
+DOCKER_RUN_CMD="$DOCKER_RUN_CMD \
+    -p ${HOST_PORT}:${CONTAINER_PORT} \
+    --name $CONTAINER_NAME \
+    $FULL_IMAGE"
+
+# Execute docker run command
+eval $DOCKER_RUN_CMD
 
 # Wait a moment for container to start
 sleep 2

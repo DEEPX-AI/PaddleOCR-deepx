@@ -120,6 +120,21 @@ echo -e "${YELLOW}PaddleOCR Version:${NC} $PADDLEOCR_VERSION"
 echo -e "${YELLOW}Image Tag:${NC}         $FULL_TAG"
 echo -e "${GREEN}========================================${NC}"
 
+# Prepare fonts for Docker build
+echo ""
+echo -e "${YELLOW}Preparing fonts for OCR visualization...${NC}"
+FONTS_DEST_DIR="deepx/engine/fonts"
+mkdir -p "$FONTS_DEST_DIR"
+
+# Copy fonts from doc/fonts to deepx/engine/fonts
+if [ -d "../../doc/fonts" ]; then
+    cp -v ../../doc/fonts/*.ttf "$FONTS_DEST_DIR/" 2>/dev/null || true
+    echo -e "${GREEN}✓ Fonts copied to $FONTS_DEST_DIR${NC}"
+else
+    echo -e "${YELLOW}⚠️  Warning: doc/fonts directory not found, skipping font copy${NC}"
+fi
+echo ""
+
 # Build the image
 docker build \
     --build-arg DEVICE_TYPE="$DEVICE_TYPE" \
@@ -135,9 +150,33 @@ echo ""
 echo -e "${GREEN}✅ Build completed successfully!${NC}"
 echo -e "${YELLOW}Image:${NC} $FULL_TAG"
 echo ""
-echo -e "${BLUE}To run the container:${NC}"
-if [ "$DEVICE_TYPE" = "gpu" ]; then
-    echo -e "  ${GREEN}docker run --gpus all -p 8081:8080 --name ocr-fastapi $FULL_TAG${NC}"
+echo -e "${BLUE}To run the container with docker_run.sh (recommended):${NC}"
+if [ "$SETUP_DEEPX" = "true" ]; then
+    if [ "$DEVICE_TYPE" = "gpu" ]; then
+        echo -e "  ${GREEN}./docker_run.sh --gpu --deepx${NC}"
+    else
+        echo -e "  ${GREEN}./docker_run.sh --deepx${NC}"
+    fi
+else
+    if [ "$DEVICE_TYPE" = "gpu" ]; then
+        echo -e "  ${GREEN}./docker_run.sh --gpu${NC}"
+    else
+        echo -e "  ${GREEN}./docker_run.sh${NC}"
+    fi
+fi
+echo ""
+echo ""
+echo -e "${BLUE}Or run manually with docker:${NC}"
+if [ "$SETUP_DEEPX" = "true" ]; then
+    echo -e "${YELLOW}⚠️  Warning: DEEPX NPU requires special permissions and device mounts${NC}"
+    echo -e "${YELLOW}   Please use docker_run.sh instead for proper NPU setup:${NC}"
+    if [ "$DEVICE_TYPE" = "gpu" ]; then
+        echo -e "   ${GREEN}./docker_run.sh --gpu --deepx${NC}"
+    else
+        echo -e "   ${GREEN}./docker_run.sh --deepx${NC}"
+    fi
+elif [ "$DEVICE_TYPE" = "gpu" ]; then
+    echo -e "  ${GREEN}docker run -d --gpus all -p 8081:8080 --name ocr-fastapi $FULL_TAG${NC}"
 else
     echo -e "  ${GREEN}docker run -d -p 8081:8080 --name ocr-fastapi $FULL_TAG${NC}"
 fi
@@ -148,4 +187,4 @@ echo ""
 echo -e "${BLUE}API Documentation:${NC}"
 echo -e "  ${GREEN}http://localhost:8081/docs${NC} (Swagger UI)"
 echo ""
-echo -e "${YELLOW}Note: Using port 8081 to avoid conflict with Flask service on 8080${NC}"
+echo -e "${YELLOW}Note: Using port 8081 to avoid conflict with local service on 8080${NC}"

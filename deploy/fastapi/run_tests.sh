@@ -115,7 +115,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --clean-output)
             # Optional value: if no value or next arg starts with --, default to true
-            if [ -z "$2" ] || [[ "$2" == --* ]]; then
+            if [ -z "$2" ] || [[ "$2" == --* ]] || [[ "$2" == -* ]]; then
                 CLEAN_OUTPUT=true
                 shift
             else
