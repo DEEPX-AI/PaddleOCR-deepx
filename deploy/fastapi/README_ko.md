@@ -620,6 +620,54 @@ python ocr_service.py
 - `PORT`: 서비스 포트 (기본값: 8080)
 - `HOST`: 바인딩 호스트 (기본값: 0.0.0.0)
 
+### DEEPX NPU 환경 변수 (Docker)
+
+DEEPX NPU 사용 시 (`--deepx` 플래그), RT 최적화 설정을 런타임에 변경할 수 있습니다. 기본값은 `.env.deepx`에서 로드되지만 오버라이드 가능합니다:
+
+| 변수 | 설명 | 기본값 | 범위 |
+|------|------|--------|------|
+| `CUSTOM_INTER_OP_THREADS_COUNT` | Inter-op 스레드 수 | 1 | 1-8 |
+| `CUSTOM_INTRA_OP_THREADS_COUNT` | Intra-op 스레드 수 | 2 | 1-16 |
+| `DXRT_DYNAMIC_CPU_THREAD` | 동적 CPU 스레드 할당 | 1 | 0-2 |
+| `DXRT_TASK_MAX_LOAD` | 최대 태스크 로드 | 3 | 1-10 |
+| `NFH_INPUT_WORKER_THREADS` | 입력 워커 스레드 수 | 2 | 1-8 |
+| `NFH_OUTPUT_WORKER_THREADS` | 출력 워커 스레드 수 | 4 | 1-16 |
+
+**런타임에 환경 변수 오버라이드:**
+
+```bash
+# 개별 변수 오버라이드
+docker run -p 8081:8080 \
+  -e CUSTOM_INTER_OP_THREADS_COUNT=4 \
+  -e CUSTOM_INTRA_OP_THREADS_COUNT=8 \
+  paddleocr-fastapi-service:latest-deepx
+
+# 커스텀 환경 파일 사용
+cat > custom-deepx.env << EOF
+CUSTOM_INTER_OP_THREADS_COUNT=4
+CUSTOM_INTRA_OP_THREADS_COUNT=8
+DXRT_TASK_MAX_LOAD=6
+EOF
+
+docker run -p 8081:8080 \
+  --env-file custom-deepx.env \
+  paddleocr-fastapi-service:latest-deepx
+```
+
+**docker_run.sh 사용 시:**
+```bash
+# 기본 설정 (.env.deepx 사용)
+./docker_run.sh --deepx
+
+# 커스텀 설정
+docker run -p 8081:8080 \
+  -e CUSTOM_INTER_OP_THREADS_COUNT=4 \
+  --name ocr-fastapi \
+  paddleocr-fastapi-service:latest-deepx
+```
+
+> **참고**: 자세한 튜닝 권장사항은 [DEEPX NPU 지원 가이드](docs/ko/DEEPX_NPU_GUIDE_ko.md)를 참고하세요.
+
 ---
 
 ## 🆚 비교

@@ -3,6 +3,7 @@
 FROM python:3.10.16-slim
 
 ARG SETUP_DEEPX="false"
+ARG DX_RT_VERSION="3.1.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_NO_CACHE_DIR=0
@@ -18,7 +19,7 @@ RUN apt-get update \
         libgomp1 \
         wget \
         curl \
-        $(if [ "${SETUP_DEEPX}" = "true" ]; then echo "build-essential git"; fi) \
+        $(if [ "${SETUP_DEEPX}" = "true" ]; then echo "build-essential git sudo"; fi) \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PaddlePaddle (choose CPU or GPU version)
@@ -48,6 +49,28 @@ RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
             jiwer;\
         python -m pip install "numpy<2.0.0"; \
     fi
+
+# Install dx_rt if DEEPX is enabled
+ARG DX_RT_VERSION="3.1.0"
+RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
+        echo "=== Installing dx_rt v${DX_RT_VERSION} ===" && \
+        cd /tmp && \
+        wget --no-check-certificate -O dx_rt.tar.gz "https://github.com/DEEPX-AI/dx_rt/archive/refs/tags/v${DX_RT_VERSION}.tar.gz" && \
+        mkdir -p dx_rt && \
+        tar -xzf dx_rt.tar.gz -C dx_rt --strip-components=1 && \
+        cd dx_rt && \
+        chmod +x install.sh build.sh && \
+        ./install.sh --all && \
+        ./build.sh && \
+        echo "/usr/local/lib" > /etc/ld.so.conf.d/dxrt.conf && \
+        ldconfig && \
+        cd / && \
+        rm -rf /tmp/dx_rt /tmp/dx_rt.tar.gz && \
+        echo "dx_rt installation completed"; \
+    fi
+
+# Set LD_LIBRARY_PATH for dx_rt shared libraries
+ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}
 
 # Create working directory
 WORKDIR /app
@@ -141,11 +164,48 @@ RUN if [ "${DOWNLOAD_MODELS}" = "true" ]; then \
         && rm -f *.tar; \
     fi
 
-# Copy service script
+# Copy service script and DEEPX environment configuration
 COPY --chown=paddleocr:paddleocr ocr_service.py /app/
+COPY --chown=paddleocr:paddleocr .env.deepx /app/.env.deepx
+
+# Load DEEPX NPU environment variables if SETUP_DEEPX is enabled
+RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
+        echo '#!/bin/bash' > /app/start.sh && \
+        echo '# Load DEEPX NPU environment variables' >> /app/start.sh && \
+        echo 'echo "🔧 Applying DEEPX NPU environment settings..."' >> /app/start.sh && \
+        echo '' >> /app/start.sh && \
+        echo '# Load defaults from .env.deepx if environment variables are not already set' >> /app/start.sh && \
+        echo 'if [ -f /app/.env.deepx ]; then' >> /app/start.sh && \
+        echo '    while IFS="=" read -r key value; do' >> /app/start.sh && \
+        echo '        # Skip comments and empty lines' >> /app/start.sh && \
+        echo '        if [[ ! "$key" =~ ^[[:space:]]*# ]] && [[ -n "$key" ]]; then' >> /app/start.sh && \
+        echo '            # Only set if not already defined (allows runtime override)' >> /app/start.sh && \
+        echo '            if [ -z "${!key}" ]; then' >> /app/start.sh && \
+        echo '                export "$key=$value"' >> /app/start.sh && \
+        echo '            fi' >> /app/start.sh && \
+        echo '        fi' >> /app/start.sh && \
+        echo '    done < /app/.env.deepx' >> /app/start.sh && \
+        echo 'fi' >> /app/start.sh && \
+        echo '' >> /app/start.sh && \
+        echo '# Display current settings' >> /app/start.sh && \
+        echo 'echo "CUSTOM_INTER_OP_THREADS_COUNT=${CUSTOM_INTER_OP_THREADS_COUNT:-not set}"' >> /app/start.sh && \
+        echo 'echo "CUSTOM_INTRA_OP_THREADS_COUNT=${CUSTOM_INTRA_OP_THREADS_COUNT:-not set}"' >> /app/start.sh && \
+        echo 'echo "DXRT_DYNAMIC_CPU_THREAD=${DXRT_DYNAMIC_CPU_THREAD:-not set}"' >> /app/start.sh && \
+        echo 'echo "DXRT_TASK_MAX_LOAD=${DXRT_TASK_MAX_LOAD:-not set}"' >> /app/start.sh && \
+        echo 'echo "NFH_INPUT_WORKER_THREADS=${NFH_INPUT_WORKER_THREADS:-not set}"' >> /app/start.sh && \
+        echo 'echo "NFH_OUTPUT_WORKER_THREADS=${NFH_OUTPUT_WORKER_THREADS:-not set}"' >> /app/start.sh && \
+        echo 'echo ""' >> /app/start.sh && \
+        echo '' >> /app/start.sh && \
+        echo 'exec python ocr_service.py' >> /app/start.sh && \
+        chmod +x /app/start.sh; \
+    else \
+        echo '#!/bin/bash' > /app/start.sh && \
+        echo 'exec python ocr_service.py' >> /app/start.sh && \
+        chmod +x /app/start.sh; \
+    fi
 
 # Expose port for the service
 EXPOSE 8080
 
-# Run OCR service with uvicorn
-CMD ["python", "ocr_service.py"]
+# Run OCR service with start script
+CMD ["/app/start.sh"]

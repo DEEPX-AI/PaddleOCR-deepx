@@ -620,6 +620,54 @@ python ocr_service.py
 - `PORT`: Service port (default: 8080)
 - `HOST`: Binding host (default: 0.0.0.0)
 
+### DEEPX NPU Environment Variables (Docker)
+
+When using DEEPX NPU (`--deepx` flag), you can customize RT optimization settings at runtime. Default values are loaded from `.env.deepx`, but can be overridden:
+
+| Variable | Description | Default | Range |
+|----------|-------------|---------|-------|
+| `CUSTOM_INTER_OP_THREADS_COUNT` | Number of inter-op threads | 1 | 1-8 |
+| `CUSTOM_INTRA_OP_THREADS_COUNT` | Number of intra-op threads | 2 | 1-16 |
+| `DXRT_DYNAMIC_CPU_THREAD` | Dynamic CPU thread allocation | 1 | 0-2 |
+| `DXRT_TASK_MAX_LOAD` | Maximum task load | 3 | 1-10 |
+| `NFH_INPUT_WORKER_THREADS` | Input worker threads | 2 | 1-8 |
+| `NFH_OUTPUT_WORKER_THREADS` | Output worker threads | 4 | 1-16 |
+
+**Override environment variables at runtime:**
+
+```bash
+# Single variable override
+docker run -p 8081:8080 \
+  -e CUSTOM_INTER_OP_THREADS_COUNT=4 \
+  -e CUSTOM_INTRA_OP_THREADS_COUNT=8 \
+  paddleocr-fastapi-service:latest-deepx
+
+# Using custom environment file
+cat > custom-deepx.env << EOF
+CUSTOM_INTER_OP_THREADS_COUNT=4
+CUSTOM_INTRA_OP_THREADS_COUNT=8
+DXRT_TASK_MAX_LOAD=6
+EOF
+
+docker run -p 8081:8080 \
+  --env-file custom-deepx.env \
+  paddleocr-fastapi-service:latest-deepx
+```
+
+**With docker_run.sh:**
+```bash
+# Default settings (from .env.deepx)
+./docker_run.sh --deepx
+
+# Custom settings
+docker run -p 8081:8080 \
+  -e CUSTOM_INTER_OP_THREADS_COUNT=4 \
+  --name ocr-fastapi \
+  paddleocr-fastapi-service:latest-deepx
+```
+
+> **Note**: See [DEEPX NPU Support Guide](docs/DEEPX_NPU_GUIDE.md) for detailed tuning recommendations.
+
 ---
 
 ## 🆚 Comparison
