@@ -28,7 +28,7 @@ DEEPX NPU 전용 설정 스크립트를 사용하여 모든 의존성을 자동�
 ```
 
 **설정 스크립트가 자동으로 수행하는 작업:**
-- ✅ Python 3.11+ venv 생성 및 활성화
+- ✅ python 3.10+ venv 생성 및 활성화
 - ✅ DX_RT 빌드 (dx-engine 자동 설치)
 - ✅ PaddlePaddle 3.0.0 설치
 - ✅ PyTorch 2.3.0 + torchvision + torchaudio 설치
@@ -131,7 +131,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
 ./local_deepx_setup.sh --dx_rt /path/to/dx_rt --gpu
 
 # Python 버전 지정
-./local_deepx_setup.sh --dx_rt /path/to/dx_rt --python python3.11
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt --python python3.10
 ```
 
 ### 전체 옵션
@@ -144,7 +144,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
 | `--no-models` | PaddleOCR 모델 다운로드 건너뛰기 | false |
 | `--no-deepx-models` | DEEPX 모델 다운로드 건너뛰기 | false |
 | `--no-npu` | NPU 설정 건너뛰기 (CPU만) | false |
-| `--python VERSION` | Python 버전 지정 | python3.11 |
+| `--python VERSION` | Python 버전 지정 | python3.10 |
 | `--version VERSION` | PaddleOCR 버전 지정 | 3.3.2 |
 | `--inter-threads N` | CUSTOM_INTER_OP_THREADS_COUNT | 1 |
 | `--intra-threads N` | CUSTOM_INTRA_OP_THREADS_COUNT | 3 |
@@ -193,27 +193,54 @@ cd /path/to/dx_rt
 
 deepx의 환경 설정 로직을 `deepx_env.sh`로 포팅:
 
+**설정 파일:**
+- `.env.deepx`: 기본 RT 최적화 값을 저장하는 마스터 설정 파일
+- `deepx_env.sh`: `.env.deepx`에서 기본값을 읽어오는 자동 생성 스크립트
+
+**생성되는 파일 (.env.deepx):**
+```bash
+# DEEPX NPU Environment Variables
+# Auto-generated from deepx_env.sh
+# Used by VS Code debugger launch configurations
+# Default values: 1 2 1 3 2 4
+
+# RT Optimization Settings (Default values from deepx_env.sh)
+CUSTOM_INTER_OP_THREADS_COUNT=1
+CUSTOM_INTRA_OP_THREADS_COUNT=2
+DXRT_DYNAMIC_CPU_THREAD=1
+DXRT_TASK_MAX_LOAD=3
+NFH_INPUT_WORKER_THREADS=2
+NFH_OUTPUT_WORKER_THREADS=4
+```
+
 **생성되는 파일 (deepx_env.sh):**
 ```bash
 #!/bin/bash
 # DEEPX NPU Environment Configuration
+# Source this file before running the FastAPI service with NPU support
+# Usage: source ./deepx_env.sh [CUSTOM_INTER_OP_THREADS_COUNT] [CUSTOM_INTRA_OP_THREADS_COUNT] [DXRT_DYNAMIC_CPU_THREAD] [DXRT_TASK_MAX_LOAD] [NFH_INPUT_WORKER_THREADS] [NFH_OUTPUT_WORKER_THREADS]
+# Example: source ./deepx_env.sh 1 2 1 3 2 4
+# Default values (from .env.deepx): 1 2 1 3 2 4
 
-# RT Optimization Settings
-export CUSTOM_INTER_OP_THREADS_COUNT=1
-export CUSTOM_INTRA_OP_THREADS_COUNT=3
+# Set default values (loaded from .env.deepx)
+DEFAULT_CUSTOM_INTER_OP_THREADS_COUNT=1
+DEFAULT_CUSTOM_INTRA_OP_THREADS_COUNT=2
+DEFAULT_DXRT_DYNAMIC_CPU_THREAD=1
+DEFAULT_DXRT_TASK_MAX_LOAD=3
+DEFAULT_NFH_INPUT_WORKER_THREADS=2
+DEFAULT_NFH_OUTPUT_WORKER_THREADS=4
 
-# Optional settings (uncomment if needed)
-# export DXRT_DYNAMIC_CPU_THREAD=3
-# export DXRT_TASK_MAX_LOAD=4
-# export NFH_INPUT_WORKER_THREADS=5
-# export NFH_OUTPUT_WORKER_THREADS=6
+if [ "$1" = "-1" ]; then
+    unset CUSTOM_INTER_OP_THREADS_COUNT
+elif [ -n "$1" ]; then
+    export CUSTOM_INTER_OP_THREADS_COUNT=$1
+else
+    export CUSTOM_INTER_OP_THREADS_COUNT=$DEFAULT_CUSTOM_INTER_OP_THREADS_COUNT
+fi
+# ... (다른 변수들도 동일한 로직)
 
 # Library paths
 export LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib:${LD_LIBRARY_PATH}"
-
-echo "✓ DEEPX NPU environment configured"
-echo "  CUSTOM_INTER_OP_THREADS_COUNT=${CUSTOM_INTER_OP_THREADS_COUNT}"
-echo "  CUSTOM_INTRA_OP_THREADS_COUNT=${CUSTOM_INTRA_OP_THREADS_COUNT}"
 ```
 
 ### 4. 자동 환경 적용 (run.sh)
@@ -238,26 +265,35 @@ fi
 
 | 변수 | 기본값 | 설명 | 출처 |
 |------|--------|------|------|
-| `CUSTOM_INTER_OP_THREADS_COUNT` | 1 | Inter-op 스레드 수 | deepx/set_env.sh |
-| `CUSTOM_INTRA_OP_THREADS_COUNT` | 3 | Intra-op 스레드 수 | deepx/set_env.sh |
-| `DXRT_DYNAMIC_CPU_THREAD` | - | 동적 CPU 스레드 | deepx/set_env.sh |
-| `DXRT_TASK_MAX_LOAD` | - | 최대 작업 부하 | deepx/set_env.sh |
-| `NFH_INPUT_WORKER_THREADS` | - | 입력 워커 스레드 | deepx/set_env.sh |
-| `NFH_OUTPUT_WORKER_THREADS` | - | 출력 워커 스레드 | deepx/set_env.sh |
-| `LD_LIBRARY_PATH` | ${VIRTUAL_ENV}/lib:... | 라이브러리 경로 | deepx/startup.sh |
+| `CUSTOM_INTER_OP_THREADS_COUNT` | 1 | Inter-op 스레드 수 | .env.deepx |
+| `CUSTOM_INTRA_OP_THREADS_COUNT` | 2 | Intra-op 스레드 수 | .env.deepx |
+| `DXRT_DYNAMIC_CPU_THREAD` | 1 | 동적 CPU 스레드 | .env.deepx |
+| `DXRT_TASK_MAX_LOAD` | 3 | 최대 작업 부하 | .env.deepx |
+| `NFH_INPUT_WORKER_THREADS` | 2 | 입력 워커 스레드 | .env.deepx |
+| `NFH_OUTPUT_WORKER_THREADS` | 4 | 출력 워커 스레드 | .env.deepx |
+| `LD_LIBRARY_PATH` | ${VIRTUAL_ENV}/lib:... | 라이브러리 경로 | deepx_env.sh |
+
+**기본값 (1 2 1 3 2 4):**
+모든 기본값은 `.env.deepx`에 정의되며 `deepx_env.sh`가 자동으로 로드합니다.
 
 ### 커스터마이징
 
-설치 시 옵션으로 지정하거나 `deepx_env.sh`를 직접 편집:
+RT 최적화 값을 3가지 방법으로 커스텀할 수 있습니다:
 
 ```bash
-# 방법 1: 설치 시 지정
+# 방법 1: .env.deepx 편집 (권장 - 모든 스크립트에 영향)
+vi .env.deepx
+# 그 다음 setup 실행하여 deepx_env.sh 재생성
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt
+
+# 방법 2: 설치 시 옵션 지정
 ./local_deepx_setup.sh --dx_rt /path/to/dx_rt --inter-threads 2 --intra-threads 4
 
-# 방법 2: deepx_env.sh 편집 후 적용
-vi deepx_env.sh
-source deepx_env.sh
+# 방법 3: deepx_env.sh source 시 파라미터 전달
+source deepx_env.sh 1 2 1 3 2 4
 ```
+
+**참고:** 방법 1이 권장됩니다. 모든 실행 환경(run.sh, VS Code 디버거 등)에서 일관성을 보장합니다.
 
 ---
 
@@ -444,16 +480,16 @@ print(response.json())
 **증상:**
 ```
 Error: Python 3.10 is too old for DEEPX NPU support
-Python 3.11+ is REQUIRED for DEEPX NPU
+python 3.10+ is REQUIRED for DEEPX NPU
 ```
 
 **해결:**
 ```bash
-# Python 3.11 설치
-sudo apt install python3.11
+# python 3.10 설치
+sudo apt install python3.10
 
-# 또는 Python 3.11로 재설치
-./local_deepx_setup.sh --dx_rt /path/to/dx_rt --python python3.11
+# 또는 python 3.10로 재설치
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt --python python3.10
 ```
 
 ### 2. dx_rt 경로 오류
@@ -521,16 +557,16 @@ pip install dx-engine==1.1.2
 
 **증상:**
 ```
-❌ deepx not found at /data/home/dhyang/git/github/PaddleOCR/deepx
+❌ deepx not found at /dataPaddleOCR/deepx
 ```
 
 **해결:**
 ```bash
 # 경로 확인
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/engine/
+ls -la /dataPaddleOCR/deepx/engine/
 
 # 심볼릭 링크 확인
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx
+ls -la /dataPaddleOCR/deepx
 ```
 
 ### 7. DEEPX 모델 없음
@@ -543,8 +579,8 @@ ls -la /data/home/dhyang/git/github/PaddleOCR/deepx
 **해결:**
 ```bash
 # 모델 확인
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/engine/model_files/server/
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/engine/model_files/mobile/
+ls -la /dataPaddleOCR/deepx/engine/model_files/server/
+ls -la /dataPaddleOCR/deepx/engine/model_files/mobile/
 
 # 모델이 없으면 deepx/engine/model_files에 배치 필요
 ```
@@ -558,10 +594,13 @@ ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/engine/model_files/mobile/
 ```bash
 # 환경 변수 확인
 echo $CUSTOM_INTER_OP_THREADS_COUNT  # 1
-echo $CUSTOM_INTRA_OP_THREADS_COUNT  # 3
+echo $CUSTOM_INTRA_OP_THREADS_COUNT  # 2
 
-# 수동 적용
+# 수동 적용 (.env.deepx의 기본값 사용)
 source deepx_env.sh
+
+# 또는 커스텀 값 지정
+source deepx_env.sh 1 2 1 3 2 4
 
 # 서비스 재시작
 ./run.sh
@@ -597,10 +636,13 @@ pip list | grep dx-engine
 deploy/docker/fastapi/
 ├── ocr_service.py           # NPU 지원 추가
 ├── local_deepx_setup.sh     # NPU 자동 설치 스크립트
-├── deepx_env.sh             # RT 최적화 환경 변수 (자동 생성)
+├── .env.deepx               # RT 최적화 기본값 (마스터 설정)
+├── deepx_env.sh             # RT 최적화 스크립트 (.env.deepx에서 자동 생성)
 ├── run.sh                   # 서비스 시작 (deepx_env.sh 자동 적용)
-└── docs/ko/
-    └── DEEPX_NPU_GUIDE_ko.md    # 이 파일
+└── docs/
+    ├── DEEPX_NPU_GUIDE.md       # 영문 가이드
+    └── ko/
+        └── DEEPX_NPU_GUIDE_ko.md    # 이 파일
 ```
 
 ### 코드 변경 요약

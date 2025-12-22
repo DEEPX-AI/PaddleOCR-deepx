@@ -35,7 +35,7 @@ Comprehensive pytest test suite for the PaddleOCR FastAPI service, covering all 
 ### 1. Install Test Dependencies
 
 ```bash
-cd /data/home/dhyang/git/github/PaddleOCR/deploy/docker/fastapi
+cd /dataPaddleOCR/deploy/docker/fastapi
 pip install -r test_requirements.txt
 ```
 
@@ -55,7 +55,7 @@ The service must be running before executing tests. Default port is `8080` (can 
 docker run -d -p 8080:8080 --name ocr-fastapi paddleocr-fastapi-service:latest
 
 # Or run locally
-cd /data/home/dhyang/git/github/PaddleOCR/deploy/docker/fastapi
+cd /dataPaddleOCR/deploy/docker/fastapi
 ./run.sh
 ```
 
@@ -231,7 +231,7 @@ TestPerformanceAndEdgeCases
 
 Tests automatically load **all PNG images** from:
 ```
-/data/home/dhyang/git/github/PaddleOCR/deepx/images/
+/dataPaddleOCR/deepx/images/
 ```
 
 Currently **20 images** are processed per test:
@@ -403,7 +403,7 @@ AssertionError: Test image not found
 **Solution:** Verify test images exist in `deepx/images/` directory
 
 ```bash
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/images/
+ls -la /dataPaddleOCR/deepx/images/
 
 # Or use custom images
 ./run_tests.sh --input /path/to/your/images/

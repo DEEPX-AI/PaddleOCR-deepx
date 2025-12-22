@@ -35,7 +35,7 @@ PaddleOCR FastAPI 서비스의 모든 엔드포인트와 Baidu AI Studio 호환 
 ### 1. 테스트 의존성 설치
 
 ```bash
-cd /data/home/dhyang/git/github/PaddleOCR/deploy/docker/fastapi
+cd /dataPaddleOCR/deploy/docker/fastapi
 pip install -r test_requirements.txt
 ```
 
@@ -55,7 +55,7 @@ pip install pytest pytest-timeout pytest-cov requests
 docker run -d -p 8080:8080 --name ocr-fastapi paddleocr-fastapi-service:latest
 
 # 또는 로컬 실행
-cd /data/home/dhyang/git/github/PaddleOCR/deploy/docker/fastapi
+cd /dataPaddleOCR/deploy/docker/fastapi
 ./run.sh
 ```
 
@@ -231,7 +231,7 @@ TestPerformanceAndEdgeCases
 
 테스트는 다음 경로에서 **모든 PNG 이미지**를 자동으로 로드합니다:
 ```
-/data/home/dhyang/git/github/PaddleOCR/deepx/images/
+/dataPaddleOCR/deepx/images/
 ```
 
 현재 테스트당 **20개 이미지**가 처리됩니다:
@@ -403,7 +403,7 @@ AssertionError: Test image not found
 **해결책:** `deepx/images/` 디렉토리에 테스트 이미지가 있는지 확인하세요
 
 ```bash
-ls -la /data/home/dhyang/git/github/PaddleOCR/deepx/images/
+ls -la /dataPaddleOCR/deepx/images/
 
 # 또는 커스텀 이미지 사용
 ./run_tests.sh --input /path/to/your/images/
