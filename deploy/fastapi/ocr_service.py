@@ -959,7 +959,8 @@ def process_images_with_ocr(
     if isinstance(imgs, np.ndarray):
         imgs = [imgs]
     
-    # Preprocessing: CPU uses PaddleX models, NPU handles internally
+    # Preprocessing: For URL requests, handle doc preprocessing here
+    # For NPU, if models are used, apply them; otherwise NPU will handle internally
     if not deepx:
         # CPU preprocessing with PaddleX models
         preprocessed_imgs = []
@@ -968,16 +969,34 @@ def process_images_with_ocr(
             
             if use_doc_orientation:
                 print("🔧 Applying document orientation classification (CPU)")
-                processed_img = process_with_doc_orientation(processed_img)
+                processed_img = process_with_doc_orientation(processed_img, use_deepx=False)
             
             if use_doc_unwarping:
                 print("🔧 Applying document unwarping (CPU)")
-                processed_img = process_with_doc_unwarping(processed_img)
+                processed_img = process_with_doc_unwarping(processed_img, use_deepx=False)
             
             preprocessed_imgs.append(processed_img)
         
         imgs = preprocessed_imgs
-    # NPU preprocessing is handled internally
+    else:
+        # NPU preprocessing with DXNN models for URL requests
+        if use_doc_orientation or use_doc_unwarping:
+            preprocessed_imgs = []
+            for img in imgs:
+                processed_img = img.copy()
+                
+                if use_doc_orientation:
+                    print("🔧 Applying document orientation classification (NPU)")
+                    processed_img = process_with_doc_orientation(processed_img, use_deepx=True)
+                
+                if use_doc_unwarping:
+                    print("🔧 Applying document unwarping (NPU)")
+                    processed_img = process_with_doc_unwarping(processed_img, use_deepx=True)
+                
+                preprocessed_imgs.append(processed_img)
+            
+            imgs = preprocessed_imgs
+    # NPU textline orientation is handled internally
     
     # Get OCR engine (unified for CPU/NPU)
     ocr_engine = get_ocr_engine(
@@ -1003,13 +1022,23 @@ def process_images_with_ocr(
     
     return results
 
-def process_with_doc_orientation(img: np.ndarray) -> np.ndarray:
+def process_with_doc_orientation(img: np.ndarray, use_deepx: bool = False) -> np.ndarray:
     """
     Process image with document orientation classification
-    Uses PP-LCNet_x1_0_doc_ori model
+    Uses PP-LCNet_x1_0_doc_ori model (CPU) or doc_ori_fixed.dxnn (NPU)
     
-    Returns rotated image if orientation is detected
+    Args:
+        img: Input image as numpy array (BGR format)
+        use_deepx: Use NPU model if True, CPU model if False
+    
+    Returns:
+        np.ndarray: Rotated image if orientation is detected
     """
+    if use_deepx:
+        # NPU path - use DXNN model directly
+        return process_with_doc_orientation_npu(img)
+    
+    # CPU path - use PaddleX model
     classifier = get_doc_orientation_classifier()
     if classifier is None:
         print("⚠️ DocImgOrientationClassification not available, returning original image")
@@ -1085,14 +1114,16 @@ def process_with_doc_orientation(img: np.ndarray) -> np.ndarray:
         traceback.print_exc()
         return img
 
-def process_with_doc_unwarping(img: np.ndarray) -> np.ndarray:
+def process_with_doc_unwarping(img: np.ndarray, use_deepx: bool = False) -> np.ndarray:
     """
     Process image with document unwarping using UVDoc model
     
     UVDoc (TextImageUnwarping) corrects document distortion (curving, warping)
+    Uses UVDoc (CPU) or UVDoc_pruned_p3.dxnn (NPU)
     
     Args:
         img: Input image as numpy array (BGR format)
+        use_deepx: Use NPU model if True, CPU model if False
         
     Returns:
         np.ndarray: Unwarped image (BGR format, same size as input)
@@ -1102,6 +1133,11 @@ def process_with_doc_unwarping(img: np.ndarray) -> np.ndarray:
         - Result dict contains keys: input_path, page_index, input_img, doctr_img
         - doctr_img is the corrected image (numpy array)
     """
+    if use_deepx:
+        # NPU path - use DXNN model directly
+        return process_with_doc_unwarping_npu(img)
+    
+    # CPU path - use PaddleX model
     unwarp_model = get_doc_unwarping_model()
     if unwarp_model is None:
         print("⚠️ TextImageUnwarping not available, returning original image")
@@ -1161,6 +1197,84 @@ def process_with_doc_unwarping(img: np.ndarray) -> np.ndarray:
         
     except Exception as e:
         print(f"⚠️ Error in document unwarping: {e}")
+        import traceback
+        traceback.print_exc()
+        return img
+
+def process_with_doc_orientation_npu(img: np.ndarray) -> np.ndarray:
+    """
+    Process image with document orientation classification using NPU (DXNN model)
+    Uses doc_ori_fixed.dxnn model directly
+    
+    Args:
+        img: Input image as numpy array (BGR format)
+    
+    Returns:
+        np.ndarray: Rotated image if orientation is detected
+    """
+    try:
+        # Import DEEPX modules
+        from deepx.engine.paddleocr import DocumentOrientationNode
+        
+        # Load NPU models
+        models = load_npu_models_once()
+        doc_ori_model = models['doc_ori_model']
+        
+        if doc_ori_model is None:
+            print("⚠️ NPU doc_ori model not available, returning original image")
+            return img
+        
+        # Create doc orientation node
+        doc_node = DocumentOrientationNode(model=doc_ori_model)
+        
+        # Run inference - returns ((angle, rotated_image), latency)
+        print(f"🔍 Running NPU doc orientation on image size: {img.shape}")
+        (angle, output_img), latency = doc_node(img)
+        
+        print(f"✅ NPU orientation processed: angle={angle}°, latency={latency:.3f}s, {img.shape} -> {output_img.shape}")
+        return output_img
+        
+    except Exception as e:
+        print(f"⚠️ Error in NPU doc orientation: {e}")
+        import traceback
+        traceback.print_exc()
+        return img
+
+def process_with_doc_unwarping_npu(img: np.ndarray) -> np.ndarray:
+    """
+    Process image with document unwarping using NPU (DXNN model)
+    Uses UVDoc_pruned_p3.dxnn model directly
+    
+    Args:
+        img: Input image as numpy array (BGR format)
+        
+    Returns:
+        np.ndarray: Unwarped image (BGR format)
+    """
+    try:
+        # Import DEEPX modules
+        from deepx.engine.paddleocr import DocumentUnwarpingNode
+        
+        # Load NPU models
+        models = load_npu_models_once()
+        doc_unwarping_model = models['doc_unwarping_model']
+        
+        if doc_unwarping_model is None:
+            print("⚠️ NPU UVDoc model not available, returning original image")
+            return img
+        
+        # Create doc unwarping node
+        unwarp_node = DocumentUnwarpingNode(model=doc_unwarping_model)
+        
+        # Run inference - returns (unwarped_image, latency)
+        print(f"🔍 Running NPU doc unwarping on image size: {img.shape}")
+        output_img, latency = unwarp_node(img)
+        
+        print(f"✅ NPU unwarping processed: latency={latency:.3f}s, {img.shape} -> {output_img.shape}")
+        return output_img
+        
+    except Exception as e:
+        print(f"⚠️ Error in NPU doc unwarping: {e}")
         import traceback
         traceback.print_exc()
         return img
@@ -1456,11 +1570,10 @@ async def ocr_image(request: OCRRequest):
     - NPU + multiple images + async: AsyncPipelineOCR batch processing
     - NPU + (single image OR sync): Sequential PaddleOcr processing
     - CPU: Always sequential processing
-    """
-    global ocr
-    if ocr is None:
-        ocr = get_ocr_instance()
     
+    Note: OCR engine is selected dynamically based on request.deepx parameter
+    No pre-initialization needed - get_ocr_engine() handles lazy loading
+    """
     try:
         # Extract images from request
         imgs = []
@@ -1541,11 +1654,10 @@ async def ocr_upload(file: UploadFile = File(...), deepx: bool = Form(False), sy
         sync: Use sync NPU PaddleOCR instead of async pipeline (default: false)
     
     Returns OCR results with bounding boxes, text, and confidence scores
-    """
-    global ocr
-    if ocr is None:
-        ocr = get_ocr_instance()
     
+    Note: OCR engine is selected dynamically based on deepx parameter
+    No pre-initialization needed - get_ocr_engine() handles lazy loading
+    """
     try:
         # File upload
         img = Image.open(file.file)
@@ -1594,11 +1706,10 @@ async def predict_ocr_system(request: OCRRequest):
     - NPU + multiple images + async: AsyncPipelineOCR batch processing
     - NPU + (single image OR sync): Sequential PaddleOcr processing
     - CPU: Always sequential processing
-    """
-    global ocr
-    if ocr is None:
-        ocr = get_ocr_instance()
     
+    Note: OCR engine is selected dynamically based on request.deepx parameter
+    No pre-initialization needed - get_ocr_engine() handles lazy loading
+    """
     try:
         # Extract images from request
         imgs = []
@@ -1672,11 +1783,10 @@ async def batch_ocr(request: BatchOCRRequest):
     Accepts array of base64 encoded images
     
     Returns OCR results for each image
-    """
-    global ocr
-    if ocr is None:
-        ocr = get_ocr_instance()
     
+    Note: OCR engine is selected dynamically based on request.deepx parameter
+    No pre-initialization needed - get_ocr_engine() handles lazy loading
+    """
     try:
         if not request.images:
             raise HTTPException(status_code=400, detail="No images provided")

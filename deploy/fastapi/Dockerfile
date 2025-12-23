@@ -142,25 +142,25 @@ ARG DOWNLOAD_MODELS="true"
 ARG USE_MOBILE="true"
 RUN if [ "${DOWNLOAD_MODELS}" = "true" ]; then \
         mkdir -p /home/paddleocr/.paddlex/official_models && cd /home/paddleocr/.paddlex/official_models; \
-        if [ "${USE_MOBILE}" = "true" ]; then \
-            echo "Downloading mobile models..."; \
-            wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_mobile_det_infer.tar \
-            && tar -xf PP-OCRv5_mobile_det_infer.tar && mv PP-OCRv5_mobile_det_infer PP-OCRv5_mobile_det \
-            && wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_mobile_rec_infer.tar \
-            && tar -xf PP-OCRv5_mobile_rec_infer.tar && mv PP-OCRv5_mobile_rec_infer PP-OCRv5_mobile_rec; \
-        else \
-            echo "Downloading server models..."; \
-            wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_server_det_infer.tar \
-            && tar -xf PP-OCRv5_server_det_infer.tar && mv PP-OCRv5_server_det_infer PP-OCRv5_server_det \
-            && wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_server_rec_infer.tar \
-            && tar -xf PP-OCRv5_server_rec_infer.tar && mv PP-OCRv5_server_rec_infer PP-OCRv5_server_rec; \
-        fi; \
+        echo "Downloading CPU models for preprocessing (doc orientation, unwarping, textline orientation)..."; \
         wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-LCNet_x1_0_doc_ori_infer.tar \
         && tar -xf PP-LCNet_x1_0_doc_ori_infer.tar && mv PP-LCNet_x1_0_doc_ori_infer PP-LCNet_x1_0_doc_ori \
         && wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/UVDoc_infer.tar \
         && tar -xf UVDoc_infer.tar && mv UVDoc_infer UVDoc \
         && wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-LCNet_x1_0_textline_ori_infer.tar \
-        && tar -xf PP-LCNet_x1_0_textline_ori_infer.tar && mv PP-LCNet_x1_0_textline_ori_infer PP-LCNet_x1_0_textline_ori \
+        && tar -xf PP-LCNet_x1_0_textline_ori_infer.tar && mv PP-LCNet_x1_0_textline_ori_infer PP-LCNet_x1_0_textline_ori; \
+        if [ "${USE_MOBILE}" = "true" ]; then \
+            echo "Downloading mobile det/rec models..."; \
+            wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_mobile_det_infer.tar \
+            && tar -xf PP-OCRv5_mobile_det_infer.tar && mv PP-OCRv5_mobile_det_infer PP-OCRv5_mobile_det \
+            && wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_mobile_rec_infer.tar \
+            && tar -xf PP-OCRv5_mobile_rec_infer.tar && mv PP-OCRv5_mobile_rec_infer PP-OCRv5_mobile_rec; \
+        fi; \
+        echo "Downloading server det/rec models (always for fallback)..."; \
+        wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_server_det_infer.tar \
+        && tar -xf PP-OCRv5_server_det_infer.tar && mv PP-OCRv5_server_det_infer PP-OCRv5_server_det \
+        && wget https://paddle-model-ecology.bj.bcebos.com/paddlex/official_inference_model/paddle3.0.0/PP-OCRv5_server_rec_infer.tar \
+        && tar -xf PP-OCRv5_server_rec_infer.tar && mv PP-OCRv5_server_rec_infer PP-OCRv5_server_rec \
         && rm -f *.tar; \
     fi
 

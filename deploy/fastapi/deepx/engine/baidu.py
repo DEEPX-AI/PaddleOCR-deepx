@@ -5,7 +5,12 @@ from PIL import Image, ImageOps
 import cv2
 import numpy as np
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging - set to INFO to reduce noise from PIL and multipart
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Suppress debug logs from PIL and multipart
+logging.getLogger('PIL').setLevel(logging.INFO)
+logging.getLogger('multipart').setLevel(logging.INFO)
 
 det_preprocess = [           
             {
