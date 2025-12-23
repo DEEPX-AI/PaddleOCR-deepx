@@ -481,9 +481,10 @@ class NPUOCRWrapper:
                 self.processed_imgs.append(processed_img)
                 
                 # Convert NPU format to CPU-compatible format
+                # Use bbox from rec_results to ensure alignment with filtered results
                 texts = [r['text'] for r in rec_results]
                 scores = [r['score'] for r in rec_results]
-                polys = boxes  # boxes are already in correct format
+                polys = [r['bbox'] for r in rec_results]  # bbox from recognition results (filtered)
                 
                 results.append({
                     'rec_texts': texts,
