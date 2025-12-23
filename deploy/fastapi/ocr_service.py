@@ -379,7 +379,20 @@ class NPUOCRWrapper:
         # Check if this is sync (PaddleOcr) or async (AsyncPipelineOCR)
         self.is_sync = hasattr(npu_ocr, '__call__') and not hasattr(npu_ocr, 'process_batch')
     
-    def predict(self, imgs: Union[np.ndarray, List[np.ndarray]]) -> List[dict]:
+    def predict(
+        self,
+        imgs: Union[np.ndarray, List[np.ndarray]],
+        use_doc_orientation_classify: Optional[bool] = None,
+        use_doc_unwarping: Optional[bool] = None,
+        use_textline_orientation: Optional[bool] = None,
+        text_det_limit_side_len: Optional[int] = None,
+        text_det_limit_type: Optional[str] = None,
+        text_det_thresh: Optional[float] = None,
+        text_det_box_thresh: Optional[float] = None,
+        text_det_unclip_ratio: Optional[float] = None,
+        text_rec_score_thresh: Optional[float] = None,
+        **kwargs
+    ) -> List[dict]:
         """
         Predict method compatible with CPU PaddleOCR interface
         Handles both single image and batch processing based on mode
@@ -401,6 +414,63 @@ class NPUOCRWrapper:
         results = []
         self.processed_imgs = []
         
+        # Update runtime parameters (unified for both sync and async)
+        params_updated = False
+        
+        # Update doc preprocessing flags
+        if use_doc_orientation_classify is not None or use_doc_unwarping is not None:
+            use_doc_preprocessing = use_doc_orientation_classify or use_doc_unwarping
+            self.npu_ocr.use_doc_preprocessing = use_doc_preprocessing
+            if self.npu_ocr.doc_preprocessing is not None:
+                if use_doc_orientation_classify is not None:
+                    self.npu_ocr.doc_preprocessing.use_doc_orientation = use_doc_orientation_classify
+                if use_doc_unwarping is not None:
+                    self.npu_ocr.doc_preprocessing.use_doc_unwarping = use_doc_unwarping
+            params_updated = True
+        
+        # Update textline orientation
+        if use_textline_orientation is not None:
+            self.npu_ocr.use_textline_orientation = use_textline_orientation
+            params_updated = True
+        
+        # Update detection parameters
+        if text_det_thresh is not None:
+            self.npu_ocr.det_db_thresh = text_det_thresh
+            # Update detection node thresholds
+            if hasattr(self.npu_ocr, 'detection_node'):
+                self.npu_ocr.detection_node.det_postprocess.thresh = text_det_thresh
+            params_updated = True
+        if text_det_box_thresh is not None:
+            self.npu_ocr.det_db_box_thresh = text_det_box_thresh
+            if hasattr(self.npu_ocr, 'detection_node'):
+                self.npu_ocr.detection_node.det_postprocess.box_thresh = text_det_box_thresh
+            params_updated = True
+        if text_det_unclip_ratio is not None:
+            self.npu_ocr.det_db_unclip_ratio = text_det_unclip_ratio
+            if hasattr(self.npu_ocr, 'detection_node'):
+                self.npu_ocr.detection_node.det_postprocess.unclip_ratio = text_det_unclip_ratio
+            params_updated = True
+        
+        # Update recognition parameters
+        if text_rec_score_thresh is not None:
+            self.npu_ocr.rec_score_thresh = text_rec_score_thresh
+            if hasattr(self.npu_ocr, 'recognition_node'):
+                self.npu_ocr.recognition_node.drop = text_rec_score_thresh
+            params_updated = True
+        
+        # Print updated parameters
+        if params_updated:
+            mode_name = "Sync PaddleOcr" if self.is_sync else "Async AsyncPipelineOCR"
+            print(f"🔧 NPU {mode_name} runtime params updated:")
+            print(f"   doc_preprocessing: {self.npu_ocr.use_doc_preprocessing}")
+            if self.npu_ocr.doc_preprocessing is not None:
+                print(f"   doc_orientation: {self.npu_ocr.doc_preprocessing.use_doc_orientation}")
+                print(f"   doc_unwarping: {self.npu_ocr.doc_preprocessing.use_doc_unwarping}")
+            print(f"   textline_orientation: {self.npu_ocr.use_textline_orientation}")
+            print(f"   det_thresh: {self.npu_ocr.det_db_thresh}, box_thresh: {self.npu_ocr.det_db_box_thresh}, unclip_ratio: {self.npu_ocr.det_db_unclip_ratio}")
+            print(f"   rec_score_thresh: {self.npu_ocr.rec_score_thresh}")
+        
+        # Mode-specific processing
         if self.is_sync:
             # Sync mode: Sequential processing with PaddleOcr.__call__()
             for img in imgs:
@@ -410,7 +480,7 @@ class NPUOCRWrapper:
                 # Store preprocessed image for visualization
                 self.processed_imgs.append(processed_img)
                 
-                # Convert NPU format to CPU format
+                # Convert NPU format to CPU-compatible format
                 texts = [r['text'] for r in rec_results]
                 scores = [r['score'] for r in rec_results]
                 polys = boxes  # boxes are already in correct format
@@ -418,39 +488,27 @@ class NPUOCRWrapper:
                 results.append({
                     'rec_texts': texts,
                     'rec_scores': scores,
-                    'rec_polys': polys
+                    'rec_polys': polys,
+                    'doc_preprocessor_res': {'output_img': processed_img}
                 })
         else:
             # Async mode: Batch processing with AsyncPipelineOCR.process_batch()
             batch_results = self.npu_ocr.process_batch(imgs, timeout=60.0, pass_preprocessing=False)
             
             if not batch_results:
-                batch_results = [{'rec_results': []} for _ in imgs]
+                batch_results = [{'rec_results': [], 'rec_texts': [], 'rec_scores': [], 'rec_polys': [], 'doc_preprocessor_res': {'output_img': None}} for _ in imgs]
             
-            # Convert each NPU result to CPU format
+            # AsyncPipelineOCR._format_results() returns CPU-compatible format
             for batch_result in batch_results:
                 # Store processed image for visualization
                 self.processed_imgs.append(batch_result.get('preprocessed_image', None))
                 
-                # Convert NPU rec_results to CPU format
-                rec_results = batch_result.get('rec_results', [])
-                texts = []
-                scores = []
-                polys = []
-                
-                for rec_result in rec_results:
-                    texts.append(rec_result.get('text', ''))
-                    scores.append(float(rec_result.get('score', 0.0)))
-                    
-                    bbox = rec_result.get('bbox', [])
-                    if isinstance(bbox, np.ndarray):
-                        bbox = bbox.tolist()
-                    polys.append(bbox)
-                
+                # Extract CPU-compatible format from batch_result
                 results.append({
-                    'rec_texts': texts,
-                    'rec_scores': scores,
-                    'rec_polys': polys
+                    'rec_texts': batch_result.get('rec_texts', []),
+                    'rec_scores': batch_result.get('rec_scores', []),
+                    'rec_polys': batch_result.get('rec_polys', []),
+                    'doc_preprocessor_res': batch_result.get('doc_preprocessor_res', {'output_img': None})
                 })
         
         return results
@@ -469,18 +527,9 @@ def get_doc_orientation_classifier():
     global doc_orientation_classifier
     if doc_orientation_classifier is None:
         try:
-            # Use pre-downloaded model directory to avoid re-download
-            models_dir = Path.home() / '.paddlex' / 'official_models'
-            doc_ori_model_dir = models_dir / 'PP-LCNet_x1_0_doc_ori'
-            
-            if doc_ori_model_dir.exists():
-                # Use local model
-                doc_orientation_classifier = DocImgOrientationClassification(model_name=str(doc_ori_model_dir))
-                print(f"✅ DocImgOrientationClassification initialized with local model: {doc_ori_model_dir}")
-            else:
-                # Fallback to auto-download
-                doc_orientation_classifier = DocImgOrientationClassification()
-                print("✅ DocImgOrientationClassification initialized (downloaded)")
+            # PaddleX automatically uses cached model if available
+            doc_orientation_classifier = DocImgOrientationClassification()
+            print("✅ DocImgOrientationClassification initialized (using cached model if available)")
         except Exception as e:
             print(f"⚠️ Warning: Could not initialize DocImgOrientationClassification: {e}")
             doc_orientation_classifier = None
@@ -491,18 +540,9 @@ def get_doc_unwarping_model():
     global doc_unwarping_model
     if doc_unwarping_model is None:
         try:
-            # Use pre-downloaded model directory to avoid re-download
-            models_dir = Path.home() / '.paddlex' / 'official_models'
-            uvdoc_model_dir = models_dir / 'UVDoc'
-            
-            if uvdoc_model_dir.exists():
-                # Use local model
-                doc_unwarping_model = TextImageUnwarping(model_name=str(uvdoc_model_dir))
-                print(f"✅ TextImageUnwarping initialized with local model: {uvdoc_model_dir}")
-            else:
-                # Fallback to auto-download
-                doc_unwarping_model = TextImageUnwarping()
-                print("✅ TextImageUnwarping initialized (downloaded)")
+            # PaddleX automatically uses cached model if available
+            doc_unwarping_model = TextImageUnwarping()
+            print("✅ TextImageUnwarping initialized (using cached model if available)")
         except Exception as e:
             print(f"⚠️ Warning: Could not initialize TextImageUnwarping: {e}")
             doc_unwarping_model = None
@@ -952,51 +992,16 @@ def process_images_with_ocr(
         rec_score_thresh: Recognition score threshold
     
     Returns:
-        List[dict]: OCR results for each image in unified format
-            [{'rec_texts': [...], 'rec_scores': [...], 'rec_polys': [...]}, ...]
+        List[dict]: OCR results for each image with doc_preprocessor_res
+            [{
+                'rec_texts': [...], 'rec_scores': [...], 'rec_polys': [...],
+                'doc_preprocessor_res': {'output_img': np.ndarray},
+                ...
+            }, ...]
     """
     # Normalize input to list
     if isinstance(imgs, np.ndarray):
         imgs = [imgs]
-    
-    # Preprocessing: For URL requests, handle doc preprocessing here
-    # For NPU, if models are used, apply them; otherwise NPU will handle internally
-    if not deepx:
-        # CPU preprocessing with PaddleX models
-        preprocessed_imgs = []
-        for img in imgs:
-            processed_img = img.copy()
-            
-            if use_doc_orientation:
-                print("🔧 Applying document orientation classification (CPU)")
-                processed_img = process_with_doc_orientation(processed_img, use_deepx=False)
-            
-            if use_doc_unwarping:
-                print("🔧 Applying document unwarping (CPU)")
-                processed_img = process_with_doc_unwarping(processed_img, use_deepx=False)
-            
-            preprocessed_imgs.append(processed_img)
-        
-        imgs = preprocessed_imgs
-    else:
-        # NPU preprocessing with DXNN models for URL requests
-        if use_doc_orientation or use_doc_unwarping:
-            preprocessed_imgs = []
-            for img in imgs:
-                processed_img = img.copy()
-                
-                if use_doc_orientation:
-                    print("🔧 Applying document orientation classification (NPU)")
-                    processed_img = process_with_doc_orientation(processed_img, use_deepx=True)
-                
-                if use_doc_unwarping:
-                    print("🔧 Applying document unwarping (NPU)")
-                    processed_img = process_with_doc_unwarping(processed_img, use_deepx=True)
-                
-                preprocessed_imgs.append(processed_img)
-            
-            imgs = preprocessed_imgs
-    # NPU textline orientation is handled internally
     
     # Get OCR engine (unified for CPU/NPU)
     ocr_engine = get_ocr_engine(
@@ -1013,11 +1018,30 @@ def process_images_with_ocr(
         rec_score_thresh=rec_score_thresh
     )
     
-    # Run OCR inference (unified interface - handles batch internally)
+    # Run OCR inference
+    # NPU: NPU engine handles preprocessing internally
     backend = "NPU" if deepx else "CPU"
     mode = "sync" if sync else "async"
     print(f"🚀 Using {backend} ({mode}) for inference on {len(imgs)} image(s)")
-    results = ocr_engine.predict(imgs)
+    
+    # Unified CPU/NPU inference - both return compatible format
+    # CPU: _OCRPipeline handles doc_orientation, doc_unwarping internally
+    # NPU: NPUOCRWrapper handles preprocessing and returns compatible format
+    results = list(ocr_engine.predict(
+        imgs,
+        use_doc_orientation_classify=use_doc_orientation,
+        use_doc_unwarping=use_doc_unwarping,
+        use_textline_orientation=use_textline_orientation,
+        text_det_limit_side_len=det_limit_side_len,
+        text_det_limit_type=det_limit_type,
+        text_det_thresh=det_db_thresh,
+        text_det_box_thresh=det_db_box_thresh,
+        text_det_unclip_ratio=det_db_unclip_ratio,
+        text_rec_score_thresh=rec_score_thresh
+    ))
+    
+    # Both CPU and NPU now return: {rec_texts, rec_scores, rec_polys, doc_preprocessor_res, ...}
+    
     print(f"✅ {backend} OCR completed")
     
     return results
@@ -1445,8 +1469,9 @@ async def baidu_ocr(request: BaiduOCRRequest):
         print(f"   useDocUnwarping: {request.useDocUnwarping}")
         print(f"   useTextlineOrientation: {request.useTextlineOrientation}")
         
-        # Get OCR engine to access processed images later
-        ocr_engine = get_ocr_engine(
+        # Run OCR inference using unified function (preprocessing handled inside)
+        results = process_images_with_ocr(
+            imgs=[img_np],
             deepx=request.deepx,
             sync=request.sync,
             use_doc_orientation=request.useDocOrientationClassify,
@@ -1460,14 +1485,8 @@ async def baidu_ocr(request: BaiduOCRRequest):
             rec_score_thresh=request.textRecScoreThresh
         )
         
-        # Run OCR inference
-        results = ocr_engine.predict([img_np])
-        
-        # Get preprocessed image from engine (for visualization)
-        preprocessing_img = img_np  # fallback
-        if hasattr(ocr_engine, 'processed_imgs') and len(ocr_engine.processed_imgs) > 0:
-            if ocr_engine.processed_imgs[0] is not None:
-                preprocessing_img = ocr_engine.processed_imgs[0]
+        # Get preprocessed image for visualization from doc_preprocessor_res
+        preprocessing_img = results[0]['doc_preprocessor_res']['output_img']
         
         # Unified result processing for both CPU and NPU
         ocr_results = []
