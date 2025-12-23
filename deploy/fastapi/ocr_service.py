@@ -1532,6 +1532,13 @@ async def baidu_ocr(request: BaiduOCRRequest):
         if request.visualize:
             # Draw OCR boxes on the preprocessed image
             # Boxes are in preprocessing_img coordinates for both CPU and NPU
+            
+            # # Debug: Save OCR results as JSON
+            # debug_json_path = f'test_outputs/ocr_results_{log_id}_{request.sync if "sync" else "async"}.json'
+            # with open(debug_json_path, 'w', encoding='utf-8') as f:
+            #     json.dump(ocr_results, f, ensure_ascii=False, indent=2)
+            # print(f"🐛 Debug: OCR results saved to {debug_json_path}")
+                        
             page_result['ocrImage'] = create_visualization(preprocessing_img, ocr_results)
             
             # Preprocessing visualization (show the preprocessed image without boxes)
@@ -1760,7 +1767,8 @@ async def predict_ocr_system(request: OCRRequest):
         else:
             raise HTTPException(status_code=400, detail="No image provided (url, image, or images required in JSON body)")
         
-        is_batch = len(imgs) > 1
+        # Detect if this is a batch request based on input type
+        is_batch = request.images is not None and len(request.images) > 0
         
         # Process images - all batch/single logic handled inside predict()
         results = process_images_with_ocr(
