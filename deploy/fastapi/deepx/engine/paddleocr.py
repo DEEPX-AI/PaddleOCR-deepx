@@ -1733,11 +1733,18 @@ class AsyncPipelineOCR:
                 total_chars = sum(len(result['text']) for result in job.rec_results)
                 cps = (total_chars / (pipeline_total / 1000)) if pipeline_total > 0 else 0
 
+            # CPU-compatible format with doc_preprocessor_res
             result = {
                 'job_id': job.job_id,
                 'boxes': job.det_boxes or [],
                 'rec_results': job.rec_results,
                 'preprocessed_image': job.preprocessed_image,
+                # CPU-compatible fields
+                'rec_texts': [r['text'] for r in job.rec_results],
+                'rec_scores': [r['score'] for r in job.rec_results],
+                'rec_polys': [r['bbox'] for r in job.rec_results],
+                'doc_preprocessor_res': {'output_img': job.preprocessed_image},
+                # Performance metrics
                 'total_latency_ms': pipeline_total,
                 'det_latency_ms': det_time,
                 'cls_latency_ms': cls_time,
