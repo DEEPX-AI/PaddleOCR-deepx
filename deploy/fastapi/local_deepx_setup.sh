@@ -434,13 +434,25 @@ if [ "$DOWNLOAD_MODELS" = "true" ]; then
     
     for model in "${MODELS[@]}"; do
         MODEL_NAME="${model%%:*}"
-        MODEL_URL="${model##*:}"
+        MODEL_URL="${model#*:}"
         TAR_FILE="${MODEL_URL##*/}"
         
         if [ ! -d "$MODEL_NAME" ]; then
             echo -e "${YELLOW}Downloading $MODEL_NAME...${NC}"
-            wget -q --show-progress "$MODEL_URL"
-            tar -xf "$TAR_FILE"
+            if ! wget --progress=bar:force:noscroll "$MODEL_URL" 2>&1; then
+                echo -e "${RED}Error: Failed to download $MODEL_NAME${NC}"
+                echo -e "${RED}URL: $MODEL_URL${NC}"
+                exit 1
+            fi
+            if [ ! -f "$TAR_FILE" ]; then
+                echo -e "${RED}Error: Downloaded file $TAR_FILE not found${NC}"
+                exit 1
+            fi
+            echo -e "${YELLOW}Extracting $MODEL_NAME...${NC}"
+            if ! tar -xf "$TAR_FILE"; then
+                echo -e "${RED}Error: Failed to extract $TAR_FILE${NC}"
+                exit 1
+            fi
             # Remove _infer suffix from extracted directory
             EXTRACTED_DIR="${TAR_FILE%.tar}"
             if [ -d "$EXTRACTED_DIR" ] && [ "$EXTRACTED_DIR" != "$MODEL_NAME" ]; then
@@ -524,69 +536,69 @@ DEFAULT_DXRT_TASK_MAX_LOAD=$DEFAULT_MAX_LOAD
 DEFAULT_NFH_INPUT_WORKER_THREADS=$DEFAULT_INPUT
 DEFAULT_NFH_OUTPUT_WORKER_THREADS=$DEFAULT_OUTPUT
 
-if [ "$1" = "-1" ]; then
+if [ "\$1" = "-1" ]; then
     unset CUSTOM_INTER_OP_THREADS_COUNT
     echo "CUSTOM_INTER_OP_THREADS_COUNT unset"
-elif [ -n "$1" ]; then
-    export CUSTOM_INTER_OP_THREADS_COUNT=$1
-    echo "CUSTOM_INTER_OP_THREADS_COUNT=$CUSTOM_INTER_OP_THREADS_COUNT"
+elif [ -n "\$1" ]; then
+    export CUSTOM_INTER_OP_THREADS_COUNT=\$1
+    echo "CUSTOM_INTER_OP_THREADS_COUNT=\$CUSTOM_INTER_OP_THREADS_COUNT"
 else
-    export CUSTOM_INTER_OP_THREADS_COUNT=$DEFAULT_CUSTOM_INTER_OP_THREADS_COUNT
-    echo "CUSTOM_INTER_OP_THREADS_COUNT=$CUSTOM_INTER_OP_THREADS_COUNT (default)"
+    export CUSTOM_INTER_OP_THREADS_COUNT=\$DEFAULT_CUSTOM_INTER_OP_THREADS_COUNT
+    echo "CUSTOM_INTER_OP_THREADS_COUNT=\$CUSTOM_INTER_OP_THREADS_COUNT (default)"
 fi
-if [ "$2" = "-1" ]; then
+if [ "\$2" = "-1" ]; then
     unset CUSTOM_INTRA_OP_THREADS_COUNT
     echo "CUSTOM_INTRA_OP_THREADS_COUNT unset"
-elif [ -n "$2" ]; then
-    export CUSTOM_INTRA_OP_THREADS_COUNT=$2
-    echo "CUSTOM_INTRA_OP_THREADS_COUNT=$CUSTOM_INTRA_OP_THREADS_COUNT"
+elif [ -n "\$2" ]; then
+    export CUSTOM_INTRA_OP_THREADS_COUNT=\$2
+    echo "CUSTOM_INTRA_OP_THREADS_COUNT=\$CUSTOM_INTRA_OP_THREADS_COUNT"
 else
-    export CUSTOM_INTRA_OP_THREADS_COUNT=$DEFAULT_CUSTOM_INTRA_OP_THREADS_COUNT
-    echo "CUSTOM_INTRA_OP_THREADS_COUNT=$CUSTOM_INTRA_OP_THREADS_COUNT (default)"
+    export CUSTOM_INTRA_OP_THREADS_COUNT=\$DEFAULT_CUSTOM_INTRA_OP_THREADS_COUNT
+    echo "CUSTOM_INTRA_OP_THREADS_COUNT=\$CUSTOM_INTRA_OP_THREADS_COUNT (default)"
 fi
-if [ "$3" = "-1" ]; then
+if [ "\$3" = "-1" ]; then
     unset DXRT_DYNAMIC_CPU_THREAD
     echo "DXRT_DYNAMIC_CPU_THREAD unset"
-elif [ -n "$3" ]; then
-    export DXRT_DYNAMIC_CPU_THREAD=$3
-    echo "DXRT_DYNAMIC_CPU_THREAD=$DXRT_DYNAMIC_CPU_THREAD"
+elif [ -n "\$3" ]; then
+    export DXRT_DYNAMIC_CPU_THREAD=\$3
+    echo "DXRT_DYNAMIC_CPU_THREAD=\$DXRT_DYNAMIC_CPU_THREAD"
 else
-    export DXRT_DYNAMIC_CPU_THREAD=$DEFAULT_DXRT_DYNAMIC_CPU_THREAD
-    echo "DXRT_DYNAMIC_CPU_THREAD=$DXRT_DYNAMIC_CPU_THREAD (default)"
+    export DXRT_DYNAMIC_CPU_THREAD=\$DEFAULT_DXRT_DYNAMIC_CPU_THREAD
+    echo "DXRT_DYNAMIC_CPU_THREAD=\$DXRT_DYNAMIC_CPU_THREAD (default)"
 fi
-if [ "$4" = "-1" ]; then
+if [ "\$4" = "-1" ]; then
     unset DXRT_TASK_MAX_LOAD
     echo "DXRT_TASK_MAX_LOAD unset"
-elif [ -n "$4" ]; then
-    export DXRT_TASK_MAX_LOAD=$4
-    echo "DXRT_TASK_MAX_LOAD=$DXRT_TASK_MAX_LOAD"
+elif [ -n "\$4" ]; then
+    export DXRT_TASK_MAX_LOAD=\$4
+    echo "DXRT_TASK_MAX_LOAD=\$DXRT_TASK_MAX_LOAD"
 else
-    export DXRT_TASK_MAX_LOAD=$DEFAULT_DXRT_TASK_MAX_LOAD
-    echo "DXRT_TASK_MAX_LOAD=$DXRT_TASK_MAX_LOAD (default)"
+    export DXRT_TASK_MAX_LOAD=\$DEFAULT_DXRT_TASK_MAX_LOAD
+    echo "DXRT_TASK_MAX_LOAD=\$DXRT_TASK_MAX_LOAD (default)"
 fi
-if [ "$5" = "-1" ]; then
+if [ "\$5" = "-1" ]; then
     unset NFH_INPUT_WORKER_THREADS
     echo "NFH_INPUT_WORKER_THREADS unset"
-elif [ -n "$5" ]; then
-    export NFH_INPUT_WORKER_THREADS=$5
-    echo "NFH_INPUT_WORKER_THREADS=$NFH_INPUT_WORKER_THREADS"
+elif [ -n "\$5" ]; then
+    export NFH_INPUT_WORKER_THREADS=\$5
+    echo "NFH_INPUT_WORKER_THREADS=\$NFH_INPUT_WORKER_THREADS"
 else
-    export NFH_INPUT_WORKER_THREADS=$DEFAULT_NFH_INPUT_WORKER_THREADS
-    echo "NFH_INPUT_WORKER_THREADS=$NFH_INPUT_WORKER_THREADS (default)"
+    export NFH_INPUT_WORKER_THREADS=\$DEFAULT_NFH_INPUT_WORKER_THREADS
+    echo "NFH_INPUT_WORKER_THREADS=\$NFH_INPUT_WORKER_THREADS (default)"
 fi
-if [ "$6" = "-1" ]; then
+if [ "\$6" = "-1" ]; then
     unset NFH_OUTPUT_WORKER_THREADS
     echo "NFH_OUTPUT_WORKER_THREADS unset"
-elif [ -n "$6" ]; then
-    export NFH_OUTPUT_WORKER_THREADS=$6
-    echo "NFH_OUTPUT_WORKER_THREADS=$NFH_OUTPUT_WORKER_THREADS"
+elif [ -n "\$6" ]; then
+    export NFH_OUTPUT_WORKER_THREADS=\$6
+    echo "NFH_OUTPUT_WORKER_THREADS=\$NFH_OUTPUT_WORKER_THREADS"
 else
-    export NFH_OUTPUT_WORKER_THREADS=$DEFAULT_NFH_OUTPUT_WORKER_THREADS
-    echo "NFH_OUTPUT_WORKER_THREADS=$NFH_OUTPUT_WORKER_THREADS (default)"
+    export NFH_OUTPUT_WORKER_THREADS=\$DEFAULT_NFH_OUTPUT_WORKER_THREADS
+    echo "NFH_OUTPUT_WORKER_THREADS=\$NFH_OUTPUT_WORKER_THREADS (default)"
 fi
 
 # Library paths
-export LD_LIBRARY_PATH="${VIRTUAL_ENV}/lib:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="\${VIRTUAL_ENV}/lib:\${LD_LIBRARY_PATH}"
 ENVEOF
     
     chmod +x "$ENV_FILE"
