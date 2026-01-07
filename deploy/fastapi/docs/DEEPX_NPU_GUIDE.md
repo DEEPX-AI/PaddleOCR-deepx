@@ -31,9 +31,6 @@ Use the DEEPX NPU dedicated setup script to automatically install all dependenci
 - ✅ Create and activate python 3.10+ venv
 - ✅ Build DX_RT (auto-install dx-engine)
 - ✅ Install PaddlePaddle 3.0.0
-- ✅ Install PyTorch 2.3.0 + torchvision + torchaudio
-- ✅ Install ONNX Runtime 1.18.0
-- ✅ Install additional dependencies (scikit-image, imgaug, shapely, pyclipper, jiwer)
 - ✅ Download PaddleOCR v5 models (server/mobile)
 - ✅ Verify DEEPX NPU models
 - ✅ Create RT optimization environment variable file (deepx_env.sh)
@@ -155,25 +152,8 @@ curl -X POST http://localhost:8080/api/v1/ocr \
 
 ### 1. Required Python Packages
 
-```txt
-# Core OCR dependencies
-opencv-python-headless==4.7.0.72
-numpy==1.26.4
-torch==2.3.0                    ← NPU required
-torchvision==0.18.0             ← NPU required
-torchaudio==2.3.0               ← NPU required
-onnxruntime==1.18.0             ← NPU required
-
-# Image processing dependencies
-opencv-contrib-python==4.7.0.72
-scikit-image                    ← NPU required
-imgaug                          ← NPU required
-shapely                         ← NPU required
-pyclipper                       ← NPU required
-
-# Utility dependencies
-jiwer                           ← NPU required
-```
+- [cpu requirement](../requirements.txt)
+- [gpu requirement](../requirements-gpu.txt)
 
 ### 2. DX_RT Build
 
@@ -522,20 +502,7 @@ cd /path/to/dx_rt
 cat build.log
 ```
 
-### 4. PyTorch Not Installed
-
-**Symptoms:**
-```
-❌ PyTorch not found
-```
-
-**Solution:**
-```bash
-source venv/bin/activate
-pip install torch==2.3.0 torchvision==0.18.0 torchaudio==2.3.0
-```
-
-### 5. dx-engine Not Installed
+### 4. dx-engine Not Installed
 
 **Symptoms:**
 ```
@@ -553,7 +520,7 @@ source venv/bin/activate
 pip install dx-engine==1.1.2
 ```
 
-### 6. deepx Path Error
+### 5. deepx Path Error
 
 **Symptoms:**
 ```
@@ -569,7 +536,7 @@ ls -la /dataPaddleOCR/deepx/engine/
 ls -la /dataPaddleOCR/deepx
 ```
 
-### 7. DEEPX Models Missing
+### 6. DEEPX Models Missing
 
 **Symptoms:**
 ```
@@ -585,7 +552,7 @@ ls -la /dataPaddleOCR/deepx/engine/model_files/mobile/
 # If models are missing, they need to be placed in deepx/engine/model_files
 ```
 
-### 8. RT Optimization Not Applied
+### 7. RT Optimization Not Applied
 
 **Symptoms:**
 - NPU performance lower than expected
@@ -606,7 +573,7 @@ source deepx_env.sh 1 2 1 3 2 4
 ./run.sh
 ```
 
-### 9. Import Error
+### 8. Import Error
 
 **Symptoms:**
 ```

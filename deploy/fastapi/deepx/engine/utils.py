@@ -3,13 +3,10 @@ import cv2
 import argparse
 import math
 from pathlib import Path
-import torch
 
 module_dir = Path(__file__).resolve().parent
 
 
-def torch_to_numpy(tensor: torch.Tensor) -> np.ndarray:
-    return tensor.detach().cpu().numpy()
 
 def get_rotate_crop_image(img, points):
     """

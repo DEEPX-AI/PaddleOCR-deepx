@@ -5,11 +5,13 @@
 
 set -e  # Exit on error
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Configuration
 PYTHON_VERSION="python3"  # Will auto-detect best available version
 VENV_DIR="venv"
 DEVICE_TYPE="cpu"  # cpu or gpu
-PADDLEOCR_VERSION="3.3.2"
 DOWNLOAD_MODELS="true"
 DOWNLOAD_DEEPX_MODELS="true"
 SETUP_NPU="true"
@@ -79,10 +81,6 @@ while [[ $# -gt 0 ]]; do
             PYTHON_VERSION="$2"
             shift 2
             ;;
-        --version)
-            PADDLEOCR_VERSION="$2"
-            shift 2
-            ;;
         --inter-threads)
             CUSTOM_INTER_OP_THREADS_COUNT="$2"
             shift 2
@@ -104,7 +102,6 @@ while [[ $# -gt 0 ]]; do
             echo -e "  ${GREEN}--no-deepx-models${NC}    ${YELLOW}Skip downloading DEEPX models${NC}"
             echo -e "  ${GREEN}--no-npu${NC}             ${YELLOW}Skip NPU setup (CPU only)${NC}"
             echo -e "  ${GREEN}--python${NC} VERSION     ${YELLOW}Specify Python version (default: auto-detect, 3.10+ required for NPU)${NC}"
-            echo -e "  ${GREEN}--version${NC} VERSION    ${YELLOW}Specify PaddleOCR version (default: 3.3.2)${NC}"
             echo -e "  ${GREEN}--inter-threads${NC} N    ${YELLOW}Set CUSTOM_INTER_OP_THREADS_COUNT (default: 1)${NC}"
             echo -e "  ${GREEN}--intra-threads${NC} N    ${YELLOW}Set CUSTOM_INTRA_OP_THREADS_COUNT (default: 3)${NC}"
             echo -e "  ${GREEN}-h, --help${NC}           ${YELLOW}Show this help message${NC}"
@@ -133,13 +130,15 @@ if [ "$USE_MOBILE_FLAG" = false ] && [ "$USE_SERVER_FLAG" = false ]; then
     export USE_MOBILE="true"  # Default to mobile
 fi
 
+# Export SETUP_NPU for runtime
+export SETUP_NPU="$SETUP_NPU"
+
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║${NC}  ${BLUE}PaddleOCR FastAPI Service with DEEPX NPU Setup${NC}       ${GREEN}║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 echo -e "${YELLOW}Python:${NC}               $PYTHON_VERSION"
 echo -e "${YELLOW}Device:${NC}               $DEVICE_TYPE"
 echo -e "${YELLOW}Model Type:${NC}           $MODEL_TYPE"
-echo -e "${YELLOW}PaddleOCR Version:${NC}    $PADDLEOCR_VERSION"
 echo -e "${YELLOW}Download Models:${NC}      $DOWNLOAD_MODELS"
 echo -e "${YELLOW}Download DEEPX Models:${NC} $DOWNLOAD_DEEPX_MODELS"
 echo -e "${YELLOW}Setup NPU:${NC}            $SETUP_NPU"
@@ -216,7 +215,6 @@ if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
 fi
 
 # Check deepx path
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEEPX_PATH="$SCRIPT_DIR/deepx"
 
 if [ "$SETUP_NPU" = "true" ]; then
@@ -319,12 +317,13 @@ source "$VENV_DIR/bin/activate"
 echo -e "${YELLOW}Upgrading pip...${NC}"
 python -m pip install --upgrade pip
 
-# Install PaddlePaddle
-echo -e "${YELLOW}Installing PaddlePaddle 3.0.0 (${DEVICE_TYPE})...${NC}"
+# Install dependencies from requirements file
 if [ "$DEVICE_TYPE" = "gpu" ]; then
-    python -m pip install paddlepaddle-gpu==3.0.0
+    echo -e "${YELLOW}Installing PaddlePaddle and dependencies (GPU)...${NC}"
+    python -m pip install -r "${SCRIPT_DIR}/requirements-gpu.txt"
 else
-    python -m pip install paddlepaddle==3.0.0
+    echo -e "${YELLOW}Installing PaddlePaddle and dependencies (CPU)...${NC}"
+    python -m pip install -r "${SCRIPT_DIR}/requirements.txt"
 fi
 
 # Build DX_RT and install NPU dependencies
@@ -371,37 +370,27 @@ if [ "$SETUP_NPU" = "true" ]; then
     echo -e "${GREEN}✓ DX_RT build completed successfully${NC}"
     
     # Install PyTorch
-    echo -e "${YELLOW}Installing PyTorch ${TORCH_VERSION}...${NC}"
-    python -m pip install \
-        torch==${TORCH_VERSION} \
-        torchvision==${TORCHVISION_VERSION} \
-        torchaudio==${TORCH_VERSION}
+    # echo -e "${YELLOW}Installing PyTorch ${TORCH_VERSION}...${NC}"
+    # python -m pip install \
+    #     torch==${TORCH_VERSION} \
+    #     torchvision==${TORCHVISION_VERSION} \
+    #     torchaudio==${TORCH_VERSION}
     
-    # Install ONNX Runtime
-    echo -e "${YELLOW}Installing ONNX Runtime ${ONNXRUNTIME_VERSION}...${NC}"
-    python -m pip install onnxruntime==${ONNXRUNTIME_VERSION}
+    # # Install ONNX Runtime
+    # echo -e "${YELLOW}Installing ONNX Runtime ${ONNXRUNTIME_VERSION}...${NC}"
+    # python -m pip install onnxruntime==${ONNXRUNTIME_VERSION}
     
-    # Install additional dependencies for deepx engine
-    echo -e "${YELLOW}Installing additional NPU dependencies...${NC}"
-    python -m pip install \
-        scikit-image \
-        imgaug \
-        shapely \
-        pyclipper \
-        jiwer
+    # # Install additional dependencies for deepx engine
+    # echo -e "${YELLOW}Installing additional NPU dependencies...${NC}"
+    # python -m pip install \
+    #     scikit-image \
+    #     imgaug \
+    #     shapely \
+    #     pyclipper \
+    #     jiwer
     
     echo -e "${GREEN}✓ NPU dependencies installed (dx-engine installed via dx_rt build)${NC}"
 fi
-
-# Install PaddleOCR and FastAPI dependencies
-echo -e "${YELLOW}Installing PaddleOCR ${PADDLEOCR_VERSION} and FastAPI dependencies...${NC}"
-python -m pip install \
-    paddleocr==${PADDLEOCR_VERSION} \
-    fastapi==0.109.0 \
-    uvicorn[standard]==0.27.0 \
-    python-multipart==0.0.6 \
-    pillow \
-    opencv-python-headless
 
 # Download PP-OCRv5 models
 if [ "$DOWNLOAD_MODELS" = "true" ]; then
@@ -489,6 +478,13 @@ fi
 # Create environment configuration file
 if [ "$SETUP_NPU" = "true" ]; then
     echo -e "${YELLOW}Creating NPU environment configuration...${NC}"
+    
+    # Remove existing deepx_env.sh if it exists
+    ENV_FILE="$SCRIPT_DIR/deepx_env.sh"
+    if [ -f "$ENV_FILE" ]; then
+        echo -e "${YELLOW}Removing existing deepx_env.sh...${NC}"
+        rm -f "$ENV_FILE"
+    fi
     
     # Read default values from .env.deepx if it exists
     ENV_DEEPX_FILE="$SCRIPT_DIR/.env.deepx"

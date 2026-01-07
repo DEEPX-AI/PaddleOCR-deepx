@@ -24,6 +24,23 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import uvicorn
 import cv2
+from pdf2image import convert_from_bytes
+import multiprocessing
+
+# ============================================================================
+# Constants
+# ============================================================================
+MAX_PDF_PAGES = 3  # Maximum number of PDF pages to process
+PDF_DPI = int(os.getenv('PDF_DPI', '200'))  # PDF conversion DPI (higher = better quality but slower)
+# PDF_THREAD_COUNT: Auto-detect CPU cores with reasonable limits (min: 1, max: 8, default: min(cpu_count, 4))
+try:
+    _cpu_count = multiprocessing.cpu_count()
+    _default_thread_count = min(max(_cpu_count, 1), 4)  # Use CPU count but cap at 4 for default
+except:
+    _default_thread_count = 4
+PDF_THREAD_COUNT = int(os.getenv('PDF_THREAD_COUNT', str(_default_thread_count)))  # PDF conversion thread count (for multi-core speedup)
+LAZY_LOAD = os.getenv('LAZY_LOAD', 'false').lower() == 'true'  # Load models on first request (true) or at startup (false)
+SETUP_NPU = os.getenv('SETUP_NPU', 'false').lower() == 'true'  # Enable NPU support (true) or CPU only (false)
 
 # ============================================================================
 # Model Path Configuration
@@ -1447,18 +1464,49 @@ async def baidu_ocr(request: BaiduOCRRequest):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Invalid base64 encoding: {str(e)}")
         
-        # Check file type (currently only support images, not PDF)
+        # Process based on file type
         if request.fileType == 0:
-            raise HTTPException(status_code=400, detail="PDF files not yet supported. Please set fileType=1 for images")
-        
-        # Load image
-        img = Image.open(BytesIO(file_data))
-        
-        # Convert to RGB if needed (handle grayscale, RGBA, etc.)
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        img_np = np.array(img)
+            # PDF file - convert to images
+            import time
+            pdf_start_time = time.time()
+            try:
+                print(f"📄 Processing PDF file (DPI={PDF_DPI}, threads={PDF_THREAD_COUNT})...")
+                # Use lower DPI for edge devices
+                # This significantly reduces memory and processing time
+                conversion_start = time.time()
+                pdf_images = convert_from_bytes(
+                    file_data, 
+                    dpi=PDF_DPI,
+                    thread_count=PDF_THREAD_COUNT
+                )
+                conversion_time = time.time() - conversion_start
+                # Limit to max pages
+                if len(pdf_images) > MAX_PDF_PAGES:
+                    print(f"   ⚠️  PDF has {len(pdf_images)} pages, limiting to {MAX_PDF_PAGES}")
+                    pdf_images = pdf_images[:MAX_PDF_PAGES]
+                print(f"   ✅ PDF conversion completed: {len(pdf_images)} page(s) at 200 DPI in {conversion_time:.2f}s")
+                
+                # Convert PIL images to numpy arrays (batch conversion)
+                images_to_process = []
+                for idx, pil_img in enumerate(pdf_images):
+                    if pil_img.mode != 'RGB':
+                        pil_img = pil_img.convert('RGB')
+                    images_to_process.append(np.array(pil_img))
+                    print(f"   Page {idx+1}: {pil_img.size[0]}x{pil_img.size[1]} pixels")
+            except Exception as e:
+                error_detail = str(e)
+                if 'poppler' in error_detail.lower():
+                    error_detail = "PDF processing requires poppler-utils. Install: sudo apt-get install poppler-utils"
+                raise HTTPException(status_code=400, detail=f"Failed to process PDF: {error_detail}")
+        else:
+            # Image file
+            img = Image.open(BytesIO(file_data))
+            
+            # Convert to RGB if needed (handle grayscale, RGBA, etc.)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            images_to_process = [np.array(img)]
         
         # Run OCR inference with preprocessing (unified CPU/NPU flow)
         # Preprocessing is handled inside process_images_with_ocr:
@@ -1469,10 +1517,16 @@ async def baidu_ocr(request: BaiduOCRRequest):
         print(f"   useDocOrientationClassify: {request.useDocOrientationClassify}")
         print(f"   useDocUnwarping: {request.useDocUnwarping}")
         print(f"   useTextlineOrientation: {request.useTextlineOrientation}")
+        print(f"   Processing {len(images_to_process)} page(s)")
         
-        # Run OCR inference using unified function (preprocessing handled inside)
-        results = process_images_with_ocr(
-            imgs=[img_np],
+        # OPTIMIZATION: Process all pages in batch for better performance
+        # NPU async mode can process multiple pages in parallel
+        # CPU mode will process sequentially but with less overhead
+        print(f"📄 Processing {len(images_to_process)} page(s) in batch...")
+        import time
+        ocr_start_time = time.time()
+        all_results = process_images_with_ocr(
+            imgs=images_to_process,  # Process all pages at once
             deepx=request.deepx,
             sync=request.sync,
             use_doc_orientation=request.useDocOrientationClassify,
@@ -1485,18 +1539,24 @@ async def baidu_ocr(request: BaiduOCRRequest):
             det_db_unclip_ratio=request.textDetUnclipRatio,
             rec_score_thresh=request.textRecScoreThresh
         )
+        ocr_time = time.time() - ocr_start_time
+        print(f"   ✅ OCR inference completed in {ocr_time:.2f}s ({ocr_time/len(images_to_process):.2f}s per page)")
         
-        # Get preprocessed image for visualization from doc_preprocessor_res
-        preprocessing_img = results[0]['doc_preprocessor_res']['output_img']
+        # Process results for each page
+        all_page_results = []
         
-        # Unified result processing for both CPU and NPU
-        ocr_results = []
-        if results and isinstance(results, list) and len(results) > 0:
-            first_result = results[0]
-            if isinstance(first_result, dict):
-                texts = first_result.get('rec_texts', [])
-                scores = first_result.get('rec_scores', [])
-                polys = first_result.get('rec_polys', [])
+        for page_idx, (img_np, page_result) in enumerate(zip(images_to_process, all_results)):
+            print(f"   Formatting page {page_idx + 1}/{len(images_to_process)}...")
+            
+            # Get preprocessed image for visualization from doc_preprocessor_res
+            preprocessing_img = page_result['doc_preprocessor_res']['output_img']
+            
+            # Unified result processing for both CPU and NPU
+            ocr_results = []
+            if page_result and isinstance(page_result, dict):
+                texts = page_result.get('rec_texts', [])
+                scores = page_result.get('rec_scores', [])
+                polys = page_result.get('rec_polys', [])
                 
                 for i in range(len(texts)):
                     score = float(scores[i]) if i < len(scores) else 0.0
@@ -1511,45 +1571,46 @@ async def baidu_ocr(request: BaiduOCRRequest):
                             'confidence': score,
                             'score': score
                         })
-        
-        print(f"📊 Final results after filtering: {len(ocr_results)} (threshold: {request.textRecScoreThresh})")
-        
-        # Create pruned result
-        pruned_result = {
-            'dt_polys': [r['bbox'] for r in ocr_results],
-            'rec_texts': [r['text'] for r in ocr_results],
-            'rec_scores': [r['score'] for r in ocr_results]
-        }
-        
-        # Create page result
-        page_result = {
-            'prunedResult': pruned_result,
-            'ocrImage': None,
-            'docPreprocessingImage': None,
-            'inputImage': None
-        }
-        
-        # Add visualization images if requested
-        if request.visualize:
-            # Draw OCR boxes on the preprocessed image
-            # Boxes are in preprocessing_img coordinates for both CPU and NPU
             
-            # # Debug: Save OCR results as JSON
-            # debug_json_path = f'test_outputs/ocr_results_{log_id}_{request.sync if "sync" else "async"}.json'
-            # with open(debug_json_path, 'w', encoding='utf-8') as f:
-            #     json.dump(ocr_results, f, ensure_ascii=False, indent=2)
-            # print(f"🐛 Debug: OCR results saved to {debug_json_path}")
-                        
-            page_result['ocrImage'] = create_visualization(preprocessing_img, ocr_results)
+            print(f"   Page {page_idx + 1}: {len(ocr_results)} text regions (threshold: {request.textRecScoreThresh})")
             
-            # Preprocessing visualization (show the preprocessed image without boxes)
-            if request.useDocOrientationClassify or request.useDocUnwarping:
-                _, buffer = cv2.imencode('.jpg', preprocessing_img)
-                page_result['docPreprocessingImage'] = base64.b64encode(buffer).decode('ascii')
+            # Create pruned result for this page
+            pruned_result = {
+                'dt_polys': [r['bbox'] for r in ocr_results],
+                'rec_texts': [r['text'] for r in ocr_results],
+                'rec_scores': [r['score'] for r in ocr_results]
+            }
             
-            # Original input image (before any preprocessing)
-            _, buffer = cv2.imencode('.jpg', img_np)
-            page_result['inputImage'] = base64.b64encode(buffer).decode('ascii')
+            # Create page result
+            formatted_page_result = {
+                'prunedResult': pruned_result,
+                'ocrImage': None,
+                'docPreprocessingImage': None,
+                'inputImage': None
+            }
+            
+            # Add visualization images if requested
+            if request.visualize:
+                formatted_page_result['ocrImage'] = create_visualization(preprocessing_img, ocr_results)
+                
+                # Preprocessing visualization (show the preprocessed image without boxes)
+                if request.useDocOrientationClassify or request.useDocUnwarping:
+                    _, buffer = cv2.imencode('.jpg', preprocessing_img)
+                    formatted_page_result['docPreprocessingImage'] = base64.b64encode(buffer).decode('ascii')
+                
+                # Original input image (before any preprocessing)
+                _, buffer = cv2.imencode('.jpg', img_np)
+                formatted_page_result['inputImage'] = base64.b64encode(buffer).decode('ascii')
+            
+            all_page_results.append(formatted_page_result)
+        
+        # Print total timing for PDF processing
+        if request.fileType == 0:
+            total_pdf_time = time.time() - pdf_start_time
+            print(f"✅ PDF processing completed: {len(all_page_results)} page(s) in {total_pdf_time:.2f}s")
+            print(f"   Breakdown: PDF→Image: {conversion_time:.2f}s, OCR: {ocr_time:.2f}s, Formatting: {total_pdf_time - conversion_time - ocr_time:.2f}s")
+        else:
+            print(f"✅ Completed processing {len(all_page_results)} page(s)")
         
         # Build response
         response = BaiduOCRResponse(
@@ -1557,10 +1618,10 @@ async def baidu_ocr(request: BaiduOCRRequest):
             errorCode=0,
             errorMsg="Success",
             result={
-                'ocrResults': [page_result],
+                'ocrResults': all_page_results,
                 'dataInfo': {
                     'fileType': request.fileType,
-                    'imageCount': 1
+                    'imageCount': len(images_to_process)
                 }
             }
         )
@@ -1858,7 +1919,125 @@ async def batch_ocr(request: BatchOCRRequest):
             ).dict()
         )
 
+def preload_models():
+    """
+    Preload both CPU and NPU models at server startup
+    Called when LAZY_LOAD=false
+    Exits server if model loading fails
+    """
+    print("\n" + "="*60)
+    print("🔧 PRELOADING MODELS AT STARTUP (LAZY_LOAD=false)")
+    print("="*60)
+    
+    # 1. Preload CPU models
+    print("\n📦 [1/2] Loading CPU models...")
+    try:
+        cpu_ocr = get_ocr_instance(
+            use_textline_orientation=True,
+            det_db_thresh=0.3,
+            det_db_box_thresh=0.6,
+            det_db_unclip_ratio=1.5,
+            rec_score_thresh=0.0
+        )
+        print("✅ CPU models loaded successfully")
+    except Exception as e:
+        print(f"❌ FATAL ERROR: Failed to load CPU models: {e}")
+        import traceback
+        traceback.print_exc()
+        print("\n🚨 Server startup aborted due to CPU model loading failure")
+        sys.exit(1)
+    
+    # 2. Check if NPU setup is available
+    setup_npu = os.getenv('SETUP_NPU', 'true').lower() == 'true'
+    if not setup_npu:
+        print("\n⚠️  NPU setup disabled (SETUP_NPU=false), skipping NPU model preload")
+        print("="*60)
+        return
+    
+    # Check if deepx path exists
+    deepx_path_str = os.getenv('DEEPX_PATH')
+    if deepx_path_str:
+        deepx_path = Path(deepx_path_str)
+    else:
+        deepx_path = Path(__file__).parent / 'deepx'
+    
+    # Skip NPU model loading if SETUP_NPU is false
+    if not SETUP_NPU:
+        print("\n⏭️  [2/2] Skipping NPU models (SETUP_NPU=false)")
+        print("\n" + "="*60)
+        print("✅ CPU MODELS PRELOADED SUCCESSFULLY")
+        print("="*60 + "\n")
+        return
+    
+    if not deepx_path.exists():
+        print(f"\n⚠️  DEEPX path not found at {deepx_path}, skipping NPU model preload")
+        print("="*60)
+        return
+    
+    # 3. Preload NPU models
+    print("\n📦 [2/2] Loading NPU models...")
+    try:
+        # Load NPU models (this will be cached globally)
+        npu_models = load_npu_models_once()
+        print(f"✅ NPU models loaded successfully ({npu_models['model_type']})")
+        
+        # Create both sync and async instances
+        print("\n🔧 Initializing NPU OCR instances...")
+        
+        # Sync instance
+        print("   Creating sync instance...")
+        sync_instance = get_npu_ocr_instance(
+            sync=True,
+            use_doc_orientation=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=True,
+            det_db_thresh=0.3,
+            det_db_box_thresh=0.6,
+            det_db_unclip_ratio=1.5,
+            rec_score_thresh=0.0
+        )
+        print("   ✅ Sync instance created")
+        
+        # Async instance
+        print("   Creating async instance...")
+        async_instance = get_npu_ocr_instance(
+            sync=False,
+            use_doc_orientation=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=True,
+            det_db_thresh=0.3,
+            det_db_box_thresh=0.6,
+            det_db_unclip_ratio=1.5,
+            rec_score_thresh=0.0
+        )
+        print("   ✅ Async instance created")
+        
+        print("\n✅ All NPU components loaded successfully")
+        
+    except Exception as e:
+        print(f"❌ FATAL ERROR: Failed to load NPU models: {e}")
+        import traceback
+        traceback.print_exc()
+        print("\n🚨 Server startup aborted due to NPU model loading failure")
+        sys.exit(1)
+    
+    print("\n" + "="*60)
+    print("✅ ALL MODELS PRELOADED SUCCESSFULLY")
+    print("="*60 + "\n")
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
     host = os.getenv('HOST', '0.0.0.0')
+    
+    npu_status = "enabled" if SETUP_NPU else "disabled"
+    
+    # Preload models if LAZY_LOAD=false
+    if not LAZY_LOAD:
+        print(f"\n🚀 Starting OCR service with model preloading (LAZY_LOAD=false, SETUP_NPU={npu_status})")
+        print(f"\n🚀 Starting OCR service with model preloading (LAZY_LOAD=false)")
+        preload_models()
+    else:
+        print(f"\n🚀 Starting OCR service with lazy loading (LAZY_LOAD=true)")
+        print("   Models will be loaded on first request\n")
+    
     uvicorn.run(app, host=host, port=port, log_level="info")

@@ -5,11 +5,13 @@
 
 set -e  # Exit on error
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Configuration
 PYTHON_VERSION="python3"  # Will auto-detect best available version
 VENV_DIR="venv"
 DEVICE_TYPE="cpu"  # cpu or gpu
-PADDLEOCR_VERSION="3.3.2"
 DOWNLOAD_MODELS="true"
 
 # Default values
@@ -51,10 +53,6 @@ while [[ $# -gt 0 ]]; do
             PYTHON_VERSION="$2"
             shift 2
             ;;
-        --version)
-            PADDLEOCR_VERSION="$2"
-            shift 2
-            ;;
         -h|--help)
             echo -e "${BLUE}Usage:${NC}"
             echo -e "  $0 [OPTIONS]"
@@ -65,7 +63,6 @@ while [[ $# -gt 0 ]]; do
             echo -e "  ${GREEN}--use-server${NC}       ${YELLOW}Use server models${NC}"
             echo -e "  ${GREEN}--no-models${NC}        ${YELLOW}Skip downloading models${NC}"
             echo -e "  ${GREEN}--python${NC} VERSION   ${YELLOW}Specify Python version (default: auto-detect)${NC}"
-            echo -e "  ${GREEN}--version${NC} VERSION  ${YELLOW}Specify PaddleOCR version (default: 3.3.2)${NC}"
             echo -e "  ${GREEN}-h, --help${NC}         ${YELLOW}Show this help message${NC}"
             exit 0
             ;;
@@ -89,13 +86,22 @@ if [ "$USE_MOBILE_FLAG" = false ] && [ "$USE_SERVER_FLAG" = false ]; then
     export USE_MOBILE="true"  # Default to mobile
 fi
 
+# Disable NPU for local_setup.sh (CPU only)
+export SETUP_NPU="false"
+
+# Remove deepx_env.sh if it exists (from previous NPU setup)
+DEEPX_ENV_FILE="$SCRIPT_DIR/deepx_env.sh"
+if [ -f "$DEEPX_ENV_FILE" ]; then
+    echo -e "${YELLOW}Removing existing deepx_env.sh (CPU-only setup)...${NC}"
+    rm -f "$DEEPX_ENV_FILE"
+fi
+
 echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║${NC}  ${BLUE}PaddleOCR FastAPI Service Setup${NC}                     ${GREEN}║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 echo -e "${YELLOW}Python:${NC}           $PYTHON_VERSION"
 echo -e "${YELLOW}Device:${NC}           $DEVICE_TYPE"
 echo -e "${YELLOW}Model Type:${NC}       $MODEL_TYPE"
-echo -e "${YELLOW}PaddleOCR Version:${NC} $PADDLEOCR_VERSION"
 echo -e "${YELLOW}Download Models:${NC}  $DOWNLOAD_MODELS"
 echo ""
 
@@ -133,48 +139,61 @@ fi
 
 # Create virtual environment
 echo -e "${YELLOW}Creating virtual environment...${NC}"
+
+# Check existing venv
 if [ -d "$VENV_DIR" ]; then
-    echo -e "${YELLOW}Virtual environment already exists. Removing...${NC}"
-    rm -rf "$VENV_DIR"
+    echo -e "${YELLOW}Virtual environment already exists at: $VENV_DIR${NC}"
+    
+    # Check venv Python version
+    if [ -f "$VENV_DIR/bin/python" ]; then
+        VENV_PYTHON_VERSION=$($VENV_DIR/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        echo "Existing venv Python version: $VENV_PYTHON_VERSION"
+    fi
+    
+    read -p "Remove and recreate? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Removing existing virtual environment...${NC}"
+        rm -rf "$VENV_DIR"
+    else
+        echo -e "${GREEN}✓ Keeping existing virtual environment${NC}"
+        echo -e "${YELLOW}Skipping to package installation...${NC}"
+        source "$VENV_DIR/bin/activate"
+        SKIP_VENV_CREATION=true
+    fi
 fi
 
-# Auto-detect best Python version if using default
-if [ "$PYTHON_VERSION" = "python3" ]; then
-    DETECTED_VERSION=$($PYTHON_VERSION -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-    echo -e "${YELLOW}Creating virtual environment with $PYTHON_VERSION (version $DETECTED_VERSION)...${NC}"
-else
-    echo -e "${YELLOW}Creating virtual environment with $PYTHON_VERSION...${NC}"
+# Create venv if it doesn't exist or was removed
+if [ ! -d "$VENV_DIR" ]; then
+    # Auto-detect best Python version if using default
+    if [ "$PYTHON_VERSION" = "python3" ]; then
+        DETECTED_VERSION=$($PYTHON_VERSION -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        echo -e "${YELLOW}Creating new virtual environment with $PYTHON_VERSION (version $DETECTED_VERSION)...${NC}"
+    else
+        echo -e "${YELLOW}Creating new virtual environment with $PYTHON_VERSION...${NC}"
+    fi
+    
+    $PYTHON_VERSION -m venv "$VENV_DIR"
+    
+    # Get actual venv Python version for confirmation
+    VENV_VERSION=$($VENV_DIR/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+    echo -e "${GREEN}✓ Created virtual environment with Python $VENV_VERSION${NC}"
+    
+    source "$VENV_DIR/bin/activate"
 fi
-
-$PYTHON_VERSION -m venv "$VENV_DIR"
-
-# Get actual venv Python version for confirmation
-VENV_VERSION=$($VENV_DIR/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-echo -e "${GREEN}✓ Created virtual environment with Python $VENV_VERSION${NC}"
-
-source "$VENV_DIR/bin/activate"
 
 # Upgrade pip
 echo -e "${YELLOW}Upgrading pip...${NC}"
 python -m pip install --upgrade pip
 
-# Install PaddlePaddle
-echo -e "${YELLOW}Installing PaddlePaddle 3.0.0 (${DEVICE_TYPE})...${NC}"
+# Install dependencies from requirements file
 if [ "$DEVICE_TYPE" = "gpu" ]; then
-    python -m pip install paddlepaddle-gpu==3.0.0
+    echo -e "${YELLOW}Installing PaddlePaddle and dependencies (GPU)...${NC}"
+    python -m pip install -r "${SCRIPT_DIR}/requirements-gpu.txt"
 else
-    python -m pip install paddlepaddle==3.0.0
+    echo -e "${YELLOW}Installing PaddlePaddle and dependencies (CPU)...${NC}"
+    python -m pip install -r "${SCRIPT_DIR}/requirements.txt"
 fi
-
-# Install PaddleOCR and dependencies
-echo -e "${YELLOW}Installing PaddleOCR ${PADDLEOCR_VERSION} and dependencies...${NC}"
-python -m pip install \
-    paddleocr==${PADDLEOCR_VERSION} \
-    fastapi==0.109.0 \
-    uvicorn[standard]==0.27.0 \
-    python-multipart==0.0.6 \
-    pillow \
-    opencv-python-headless
 
 # Download PP-OCRv5 models
 if [ "$DOWNLOAD_MODELS" = "true" ]; then

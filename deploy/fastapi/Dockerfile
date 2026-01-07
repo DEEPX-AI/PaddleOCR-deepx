@@ -22,33 +22,17 @@ RUN apt-get update \
         $(if [ "${SETUP_DEEPX}" = "true" ]; then echo "build-essential git sudo"; fi) \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PaddlePaddle (choose CPU or GPU version)
+# Install PaddlePaddle and dependencies from requirements file
+# CPU/GPU version is determined by the requirements file used
 ARG DEVICE_TYPE="cpu"
-RUN if [ "${DEVICE_TYPE}" = "gpu" ]; then \
-        python -m pip install "paddlepaddle-gpu==3.0.0" "numpy<2.0.0"; \
-    else \
-        python -m pip install "paddlepaddle==3.0.0" "numpy<2.0.0"; \
-    fi
-
-# Copy requirements.txt and install dependencies
 COPY requirements.txt /tmp/requirements.txt
-RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt \
-    && rm /tmp/requirements.txt
-# Install DEEPX NPU dependencies if enabled
-RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
-        python -m pip install \
-            torch==2.3.0 \
-            torchvision==0.18.0 \
-            torchaudio==2.3.0 \
-            onnxruntime==1.18.0 \
-            opencv-contrib-python==4.7.0.72 \
-            scikit-image \
-            imgaug \
-            shapely \
-            pyclipper \
-            jiwer;\
-        python -m pip install "numpy<2.0.0"; \
-    fi
+COPY requirements-gpu.txt /tmp/requirements-gpu.txt
+RUN if [ "${DEVICE_TYPE}" = "gpu" ]; then \
+        python -m pip install --no-cache-dir -r /tmp/requirements-gpu.txt; \
+    else \
+        python -m pip install --no-cache-dir -r /tmp/requirements.txt; \
+    fi \
+    && rm /tmp/requirements.txt /tmp/requirements-gpu.txt
 
 # Install dx_rt if DEEPX is enabled
 ARG DX_RT_VERSION="3.1.0"

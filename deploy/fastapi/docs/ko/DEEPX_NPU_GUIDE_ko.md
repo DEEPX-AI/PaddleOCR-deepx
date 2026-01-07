@@ -31,9 +31,6 @@ DEEPX NPU 전용 설정 스크립트를 사용하여 모든 의존성을 자동�
 - ✅ python 3.10+ venv 생성 및 활성화
 - ✅ DX_RT 빌드 (dx-engine 자동 설치)
 - ✅ PaddlePaddle 3.0.0 설치
-- ✅ PyTorch 2.3.0 + torchvision + torchaudio 설치
-- ✅ ONNX Runtime 1.18.0 설치
-- ✅ 추가 의존성 (scikit-image, imgaug, shapely, pyclipper, jiwer)
 - ✅ PaddleOCR v5 모델 다운로드 (server/mobile)
 - ✅ DEEPX NPU 모델 확인
 - ✅ RT 최적화 환경 변수 설정 파일 생성 (deepx_env.sh)
@@ -155,25 +152,8 @@ curl -X POST http://localhost:8080/api/v1/ocr \
 
 ### 1. 필수 Python 패키지
 
-```txt
-# Core OCR dependencies
-opencv-python-headless==4.7.0.72
-numpy==1.26.4
-torch==2.3.0                    ← NPU 필수
-torchvision==0.18.0             ← NPU 필수
-torchaudio==2.3.0               ← NPU 필수
-onnxruntime==1.18.0             ← NPU 필수
-
-# Image processing dependencies
-opencv-contrib-python==4.7.0.72
-scikit-image                    ← NPU 필수
-imgaug                          ← NPU 필수
-shapely                         ← NPU 필수
-pyclipper                       ← NPU 필수
-
-# Utility dependencies
-jiwer                           ← NPU 필수
-```
+- [cpu requirement](../requirements.txt)
+- [gpu requirement](../requirements-gpu.txt)
 
 ### 2. DX_RT 빌드
 
@@ -522,20 +502,7 @@ cd /path/to/dx_rt
 cat build.log
 ```
 
-### 4. PyTorch 미설치
-
-**증상:**
-```
-❌ PyTorch not found
-```
-
-**해결:**
-```bash
-source venv/bin/activate
-pip install torch==2.3.0 torchvision==0.18.0 torchaudio==2.3.0
-```
-
-### 5. dx-engine 미설치
+### 4. dx-engine 미설치
 
 **증상:**
 ```
@@ -553,7 +520,7 @@ source venv/bin/activate
 pip install dx-engine==1.1.2
 ```
 
-### 6. deepx 경로 오류
+### 5. deepx 경로 오류
 
 **증상:**
 ```
@@ -569,7 +536,7 @@ ls -la /dataPaddleOCR/deepx/engine/
 ls -la /dataPaddleOCR/deepx
 ```
 
-### 7. DEEPX 모델 없음
+### 6. DEEPX 모델 없음
 
 **증상:**
 ```
@@ -585,7 +552,7 @@ ls -la /dataPaddleOCR/deepx/engine/model_files/mobile/
 # 모델이 없으면 deepx/engine/model_files에 배치 필요
 ```
 
-### 8. RT 최적화 미적용
+### 7. RT 최적화 미적용
 
 **증상:**
 - NPU 성능이 예상보다 낮음
@@ -606,7 +573,7 @@ source deepx_env.sh 1 2 1 3 2 4
 ./run.sh
 ```
 
-### 9. Import 에러
+### 8. Import 에러
 
 **증상:**
 ```

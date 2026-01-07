@@ -3,11 +3,11 @@ from abc import ABC, abstractmethod
 import numpy as np
 from typing import List
 
-import onnx
-import onnxruntime as ort
-import torch
-from onnx import ModelProto
-from onnxruntime import InferenceSession
+# import onnx
+# import onnxruntime as ort
+# import torch
+# from onnx import ModelProto
+# from onnxruntime import InferenceSession
 
 # Python 3.10 compatibility: StrEnum backport
 try:
@@ -22,8 +22,8 @@ except ImportError:
         def _generate_next_value_(name, start, count, last_values):
             return name
 
-def torch_to_numpy(tensor: torch.Tensor) -> np.ndarray:
-    return tensor.detach().cpu().numpy()
+# def torch_to_numpy(tensor: torch.Tensor) -> np.ndarray:
+#     return tensor.detach().cpu().numpy()
 
 class SessionType(StrEnum):
     onnxruntime = "OnnxRuntime"
@@ -53,46 +53,46 @@ class SessionBase(ABC):
         ...
 
 
-def get_ort_provider() -> List[str]:
-    """get onnxruntime provider.
-    if cuda is available, return "CUDAExecutionProvider". else return "CPUExecutionProvider"
+# def get_ort_provider() -> List[str]:
+#     """get onnxruntime provider.
+#     if cuda is available, return "CUDAExecutionProvider". else return "CPUExecutionProvider"
+# 
+#     Returns:
+#         List[str]: onnxruntime provider.
+#     """
+#     if torch.cuda.is_available():
+#         provider = ["CUDAExecutionProvider"]
+#         print(f"Found {torch.cuda.device_count()} GPU(s), using GPU. ")
+#     else:
+#         provider = ["CPUExecutionProvider"]
+#         print("No GPU is available, using CPU.")
+#     return provider
+#     # return ["CPUExecutionProvider"]
 
-    Returns:
-        List[str]: onnxruntime provider.
-    """
-    if torch.cuda.is_available():
-        provider = ["CUDAExecutionProvider"]
-        print(f"Found {torch.cuda.device_count()} GPU(s), using GPU. ")
-    else:
-        provider = ["CPUExecutionProvider"]
-        print("No GPU is available, using CPU.")
-    return provider
-    # return ["CPUExecutionProvider"]
 
+# def get_ort_session_options() -> ort.SessionOptions:
+#     """get onnxruntime session options.
+#     it sets graph_optimization_level to ORT_ENABLE_BASIC.
+# 
+#     Returns:
+#         ort.SessionOptions: onnxruntime session options.
+#     """
+#     sess_option = ort.SessionOptions()
+#     sess_option.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+#     return sess_option
 
-def get_ort_session_options() -> ort.SessionOptions:
-    """get onnxruntime session options.
-    it sets graph_optimization_level to ORT_ENABLE_BASIC.
-
-    Returns:
-        ort.SessionOptions: onnxruntime session options.
-    """
-    sess_option = ort.SessionOptions()
-    sess_option.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
-    return sess_option
-
-class OnnxRuntimeSession(SessionBase):
-    """OnnxRuntimeSession class.
-
-    Args:
-        path (str): onnx model path.
-    """
-
-    def __init__(self, path: str):
-        super().__init__(path, SessionType.onnxruntime)
-        self.inference_session = self._get_inference_session()
-
-    def _get_onnx_model(self) -> ModelProto:
+# class OnnxRuntimeSession(SessionBase):
+#     """OnnxRuntimeSession class.
+# 
+#     Args:
+#         path (str): onnx model path.
+#     """
+# 
+#     def __init__(self, path: str):
+#         super().__init__(path, SessionType.onnxruntime)
+#         self.inference_session = self._get_inference_session()
+# 
+#     def _get_onnx_model(self) -> ModelProto:
         """get onnx model.
 
         Raises:
