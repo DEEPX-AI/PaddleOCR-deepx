@@ -13,8 +13,6 @@ from .utils import convert_boxes_to_quad_format, sorted_boxes, rotate_if_vertica
 
 from typing import List, Tuple, Dict, Optional, Any, cast
 import numpy as np
-import torch
-import torch.nn.functional as F
 import cv2
 import json
 from datetime import datetime

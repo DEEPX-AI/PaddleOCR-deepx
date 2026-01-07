@@ -29,6 +29,20 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Check if DEEPX NPU is available and set SETUP_NPU accordingly
+DEEPX_ENV_FILE="$SCRIPT_DIR/deepx_env.sh"
+if [ -f "$DEEPX_ENV_FILE" ]; then
+    echo -e "${YELLOW}🔧 Applying DEEPX NPU environment settings...${NC}"
+    # Source with default values (1 2 1 3 2 4)
+    source "$DEEPX_ENV_FILE"
+    # Enable NPU support
+    export SETUP_NPU="true"
+    echo ""
+else
+    # No deepx_env.sh file means CPU only
+    export SETUP_NPU="false"
+fi
+
 # Setup virtual environment
 VENV_PATH="$SCRIPT_DIR/venv"
 if [ ! -d "$VENV_PATH" ]; then
@@ -187,6 +201,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Install test requirements (needed for --list as well)
+if [ -f "test_requirements.txt" ]; then
+    echo -e "${YELLOW}Installing test requirements...${NC}"
+    pip install -q -r test_requirements.txt
+    echo -e "${GREEN}✓ Test requirements installed${NC}"
+    echo ""
+fi
+
 # If listing tests, just show them and exit
 if [ "$LIST_TESTS" = true ]; then
     echo -e "${BLUE}========================================${NC}"
@@ -219,14 +241,6 @@ if [ "$LIST_TESTS" = true ]; then
     echo ""
     
     exit 0
-fi
-
-# Install test requirements
-if [ -f "test_requirements.txt" ]; then
-    echo -e "${YELLOW}Installing test requirements...${NC}"
-    pip install -q -r test_requirements.txt
-    echo -e "${GREEN}✓ Test requirements installed${NC}"
-    echo ""
 fi
 
 echo -e "${GREEN}========================================${NC}"
@@ -287,15 +301,24 @@ fi
 # Build pytest command with optional --deepx and --sync flags
 PYTEST_ARGS=""
 if [ "$USE_DEEPX" = true ]; then
-    PYTEST_ARGS="--deepx"
-    echo -e "${YELLOW}Using DEEPX NPU for inference${NC}"
-    if [ "$USE_SYNC" = true ]; then
-        PYTEST_ARGS="$PYTEST_ARGS --sync"
-        echo -e "${YELLOW}Using sync mode (PaddleOcr)${NC}"
+    # Check if NPU is actually available
+    if [ "$SETUP_NPU" = "false" ]; then
+        echo -e "${RED}Error: --deepx flag specified but NPU is not available${NC}"
+        echo -e "${YELLOW}Please run local_deepx_setup.sh first to setup NPU environment${NC}"
+        echo -e "${YELLOW}Or run without --deepx flag to use CPU mode${NC}"
+        echo ""
+        exit 1
     else
-        echo -e "${YELLOW}Using async mode (AsyncPipelineOCR)${NC}"
+        PYTEST_ARGS="--deepx"
+        echo -e "${YELLOW}Using DEEPX NPU for inference${NC}"
+        if [ "$USE_SYNC" = true ]; then
+            PYTEST_ARGS="$PYTEST_ARGS --sync"
+            echo -e "${YELLOW}Using sync mode (PaddleOcr)${NC}"
+        else
+            echo -e "${YELLOW}Using async mode (AsyncPipelineOCR)${NC}"
+        fi
+        echo ""
     fi
-    echo ""
 fi
 
 # Run tests with pytest-html report

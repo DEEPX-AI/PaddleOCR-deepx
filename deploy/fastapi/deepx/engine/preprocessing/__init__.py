@@ -1,7 +1,6 @@
 from typing import Callable, Dict, List
 
 import numpy as np
-from torchvision.transforms import Compose
 
 from preprocessing.centercrop import CenterCrop
 from preprocessing.convertcolor import ConvertColor
@@ -117,8 +116,9 @@ class PreProcessingCompose:
                 raise ValueError(f"Invalid Preprocessing name. {preprocessing}")
 
     def __call__(self, inputs: np.ndarray) -> np.ndarray:
-        compose = Compose(self.preprocessings_ops)
-        result = compose(inputs)
+        result = inputs
+        for op in self.preprocessings_ops:
+            result = op(result)
         
         for op in self.preprocessings_ops:
             if hasattr(op, '_last_padding_info') and op._last_padding_info is not None:
