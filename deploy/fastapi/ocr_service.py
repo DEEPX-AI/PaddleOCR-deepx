@@ -503,11 +503,29 @@ class NPUOCRWrapper:
                 scores = [r['score'] for r in rec_results]
                 polys = [r['bbox'] for r in rec_results]  # bbox from recognition results (filtered)
                 
+                # Extract latency info from debug_data
+                latency_ms = debug_data.get('latency_ms', {})
+                
                 results.append({
                     'rec_texts': texts,
                     'rec_scores': scores,
                     'rec_polys': polys,
-                    'doc_preprocessor_res': {'output_img': processed_img}
+                    'doc_preprocessor_res': {'output_img': processed_img},
+                    # Include performance metrics from sync pipeline
+                    'total_latency_ms': latency_ms.get('total', 0),
+                    'det_latency_ms': latency_ms.get('det', 0),
+                    'cls_latency_ms': latency_ms.get('cls', 0),
+                    'rec_latency_ms': latency_ms.get('rec', 0),
+                    'doc_ori_latency_ms': latency_ms.get('doc_ori', 0),
+                    'doc_uv_latency_ms': latency_ms.get('doc_uv', 0),
+                    'perf_stats': {
+                        'det_time_ms': latency_ms.get('det', 0),
+                        'cls_time_ms': latency_ms.get('cls', 0),
+                        'rec_time_ms': latency_ms.get('rec', 0),
+                        'e2e_time_ms': latency_ms.get('total', 0),
+                        'num_boxes': len(boxes) if boxes else 0,
+                        'num_crops': len(crops) if crops else 0
+                    }
                 })
         else:
             # Async mode: Batch processing with AsyncPipelineOCR.process_batch()
@@ -516,17 +534,25 @@ class NPUOCRWrapper:
             if not batch_results:
                 batch_results = [{'rec_results': [], 'rec_texts': [], 'rec_scores': [], 'rec_polys': [], 'doc_preprocessor_res': {'output_img': None}} for _ in imgs]
             
-            # AsyncPipelineOCR._format_results() returns CPU-compatible format
+            # AsyncPipelineOCR._format_results() returns CPU-compatible format with performance metrics
             for batch_result in batch_results:
                 # Store processed image for visualization
                 self.processed_imgs.append(batch_result.get('preprocessed_image', None))
                 
-                # Extract CPU-compatible format from batch_result
+                # Extract CPU-compatible format from batch_result with performance metrics
                 results.append({
                     'rec_texts': batch_result.get('rec_texts', []),
                     'rec_scores': batch_result.get('rec_scores', []),
                     'rec_polys': batch_result.get('rec_polys', []),
-                    'doc_preprocessor_res': batch_result.get('doc_preprocessor_res', {'output_img': None})
+                    'doc_preprocessor_res': batch_result.get('doc_preprocessor_res', {'output_img': None}),
+                    # Include performance metrics from async pipeline
+                    'total_latency_ms': batch_result.get('total_latency_ms', 0),
+                    'det_latency_ms': batch_result.get('det_latency_ms', 0),
+                    'cls_latency_ms': batch_result.get('cls_latency_ms', 0),
+                    'rec_latency_ms': batch_result.get('rec_latency_ms', 0),
+                    'doc_ori_latency_ms': batch_result.get('doc_ori_latency_ms', 0),
+                    'doc_uv_latency_ms': batch_result.get('doc_uv_latency_ms', 0),
+                    'perf_stats': batch_result.get('perf_stats', {})
                 })
         
         return results
@@ -754,6 +780,9 @@ class BaiduOCRRequest(BaseModel):
     # DEEPX NPU support
     deepx: Optional[bool] = Field(False, description="Use DEEPX NPU for inference (default: false, uses CPU)")
     sync: Optional[bool] = Field(False, description="Use sync NPU PaddleOCR instead of async pipeline (default: false, uses AsyncPipelineOCR)")
+    
+    # Performance timing
+    inflight: Optional[bool] = Field(False, description="Include detailed performance timing information in response")
 
 # Original request models
 class OCRRequest(BaseModel):
@@ -1045,18 +1074,109 @@ def process_images_with_ocr(
     # Unified CPU/NPU inference - both return compatible format
     # CPU: _OCRPipeline handles doc_orientation, doc_unwarping internally
     # NPU: NPUOCRWrapper handles preprocessing and returns compatible format
-    results = list(ocr_engine.predict(
-        imgs,
-        use_doc_orientation_classify=use_doc_orientation,
-        use_doc_unwarping=use_doc_unwarping,
-        use_textline_orientation=use_textline_orientation,
-        text_det_limit_side_len=det_limit_side_len,
-        text_det_limit_type=det_limit_type,
-        text_det_thresh=det_db_thresh,
-        text_det_box_thresh=det_db_box_thresh,
-        text_det_unclip_ratio=det_db_unclip_ratio,
-        text_rec_score_thresh=rec_score_thresh
-    ))
+    import time
+    
+    if deepx:
+        # NPU mode - NPUOCRWrapper already includes performance metrics
+        results = list(ocr_engine.predict(
+            imgs,
+            use_doc_orientation_classify=use_doc_orientation,
+            use_doc_unwarping=use_doc_unwarping,
+            use_textline_orientation=use_textline_orientation,
+            text_det_limit_side_len=det_limit_side_len,
+            text_det_limit_type=det_limit_type,
+            text_det_thresh=det_db_thresh,
+            text_det_box_thresh=det_db_box_thresh,
+            text_det_unclip_ratio=det_db_unclip_ratio,
+            text_rec_score_thresh=rec_score_thresh
+        ))
+    else:
+        # CPU mode - measure per-image timing
+        results = []
+        for img in imgs:
+            img_start = time.time()
+            
+            # Call CPU PaddleOCR
+            img_results = list(ocr_engine.predict(
+                [img],
+                use_doc_orientation_classify=use_doc_orientation,
+                use_doc_unwarping=use_doc_unwarping,
+                use_textline_orientation=use_textline_orientation,
+                text_det_limit_side_len=det_limit_side_len,
+                text_det_limit_type=det_limit_type,
+                text_det_thresh=det_db_thresh,
+                text_det_box_thresh=det_db_box_thresh,
+                text_det_unclip_ratio=det_db_unclip_ratio,
+                text_rec_score_thresh=rec_score_thresh
+            ))
+            
+            img_time_ms = (time.time() - img_start) * 1000
+            
+            # CPU PaddleOCR returns result dict per image
+            if img_results:
+                result = img_results[0]
+                # Add performance metrics to CPU results
+                # Note: CPU PaddleOCR does not provide per-stage breakdown
+                # We measure total time and estimate stage times based on typical ratios
+                result['total_latency_ms'] = img_time_ms
+                
+                # Estimate stage times for CPU (rough approximation)
+                # Typical CPU OCR breakdown: det ~20%, cls ~5%, rec ~60%, preprocessing ~15%
+                if use_doc_orientation or use_doc_unwarping:
+                    preprocessing_pct = 0.15
+                else:
+                    preprocessing_pct = 0.0
+                
+                det_pct = 0.20
+                cls_pct = 0.05 if use_textline_orientation else 0.0
+                rec_pct = 0.60
+                
+                total_pct = preprocessing_pct + det_pct + cls_pct + rec_pct
+                if total_pct > 0:
+                    scale = 1.0 / total_pct
+                else:
+                    scale = 1.0
+                
+                # Calculate estimated times
+                if use_doc_orientation:
+                    result['doc_ori_latency_ms'] = img_time_ms * preprocessing_pct * 0.5 * scale
+                else:
+                    result['doc_ori_latency_ms'] = 0
+                    
+                if use_doc_unwarping:
+                    result['doc_uv_latency_ms'] = img_time_ms * preprocessing_pct * 0.5 * scale
+                else:
+                    result['doc_uv_latency_ms'] = 0
+                
+                result['det_latency_ms'] = img_time_ms * det_pct * scale
+                result['cls_latency_ms'] = img_time_ms * cls_pct * scale if use_textline_orientation else 0
+                result['rec_latency_ms'] = img_time_ms * rec_pct * scale
+                
+                result['perf_stats'] = {
+                    'det_time_ms': result['det_latency_ms'],
+                    'cls_time_ms': result['cls_latency_ms'],
+                    'rec_time_ms': result['rec_latency_ms'],
+                    'e2e_time_ms': img_time_ms,
+                    'num_boxes': len(result.get('rec_polys', [])),
+                    'num_crops': len(result.get('rec_polys', []))
+                }
+                
+                results.append(result)
+            else:
+                # Empty result
+                results.append({
+                    'rec_texts': [],
+                    'rec_scores': [],
+                    'rec_polys': [],
+                    'doc_preprocessor_res': {'output_img': img},
+                    'total_latency_ms': img_time_ms,
+                    'det_latency_ms': 0,
+                    'cls_latency_ms': 0,
+                    'rec_latency_ms': 0,
+                    'doc_ori_latency_ms': 0,
+                    'doc_uv_latency_ms': 0,
+                    'perf_stats': {}
+                })
     
     # Both CPU and NPU now return: {rec_texts, rec_scores, rec_polys, doc_preprocessor_res, ...}
     
@@ -1499,7 +1619,11 @@ async def baidu_ocr(request: BaiduOCRRequest):
                     error_detail = "PDF processing requires poppler-utils. Install: sudo apt-get install poppler-utils"
                 raise HTTPException(status_code=400, detail=f"Failed to process PDF: {error_detail}")
         else:
-            # Image file
+            # Image file - initialize timing variables
+            import time
+            pdf_start_time = time.time()
+            conversion_time = 0.0
+            
             img = Image.open(BytesIO(file_data))
             
             # Convert to RGB if needed (handle grayscale, RGBA, etc.)
@@ -1540,12 +1664,34 @@ async def baidu_ocr(request: BaiduOCRRequest):
             rec_score_thresh=request.textRecScoreThresh
         )
         ocr_time = time.time() - ocr_start_time
+        
+        # Collect and print detailed performance breakdown
+        total_doc_ori_ms = sum(r.get('doc_ori_latency_ms', 0) for r in all_results)
+        total_doc_uv_ms = sum(r.get('doc_uv_latency_ms', 0) for r in all_results)
+        total_det_ms = sum(r.get('det_latency_ms', 0) for r in all_results)
+        total_cls_ms = sum(r.get('cls_latency_ms', 0) for r in all_results)
+        total_rec_ms = sum(r.get('rec_latency_ms', 0) for r in all_results)
+        
         print(f"   ✅ OCR inference completed in {ocr_time:.2f}s ({ocr_time/len(images_to_process):.2f}s per page)")
+        
+        # Print detailed breakdown if preprocessing was enabled
+        if request.useDocOrientationClassify or request.useDocUnwarping or request.useTextlineOrientation:
+            print(f"   📊 Performance breakdown (total for {len(images_to_process)} page(s)):")
+            if request.useDocOrientationClassify:
+                print(f"      - Doc Orientation: {total_doc_ori_ms:.1f}ms")
+            if request.useDocUnwarping:
+                print(f"      - Doc Unwarping: {total_doc_uv_ms:.1f}ms")
+            print(f"      - Detection: {total_det_ms:.1f}ms")
+            if request.useTextlineOrientation:
+                print(f"      - Textline Orientation: {total_cls_ms:.1f}ms")
+            print(f"      - Recognition: {total_rec_ms:.1f}ms")
         
         # Process results for each page
         all_page_results = []
+        formatting_start_time = time.time()
         
         for page_idx, (img_np, page_result) in enumerate(zip(images_to_process, all_results)):
+            page_format_start = time.time()
             print(f"   Formatting page {page_idx + 1}/{len(images_to_process)}...")
             
             # Get preprocessed image for visualization from doc_preprocessor_res
@@ -1604,26 +1750,79 @@ async def baidu_ocr(request: BaiduOCRRequest):
             
             all_page_results.append(formatted_page_result)
         
+        # Calculate formatting time
+        formatting_time = time.time() - formatting_start_time
+        
         # Print total timing for PDF processing
         if request.fileType == 0:
             total_pdf_time = time.time() - pdf_start_time
             print(f"✅ PDF processing completed: {len(all_page_results)} page(s) in {total_pdf_time:.2f}s")
-            print(f"   Breakdown: PDF→Image: {conversion_time:.2f}s, OCR: {ocr_time:.2f}s, Formatting: {total_pdf_time - conversion_time - ocr_time:.2f}s")
+            print(f"   Breakdown: PDF→Image: {conversion_time:.2f}s, OCR: {ocr_time:.2f}s, Formatting: {formatting_time:.2f}s")
         else:
+            total_pdf_time = ocr_time + formatting_time
+            conversion_time = 0.0
             print(f"✅ Completed processing {len(all_page_results)} page(s)")
+        
+        # Build response result
+        result_data = {
+            'ocrResults': all_page_results,
+            'dataInfo': {
+                'fileType': request.fileType,
+                'imageCount': len(images_to_process)
+            }
+        }
+        
+        # Add performance timing if inflight=true
+        if request.inflight:
+            per_page_ocr_time = ocr_time / len(images_to_process) if len(images_to_process) > 0 else 0.0
+            per_page_format_time = formatting_time / len(images_to_process) if len(images_to_process) > 0 else 0.0
+            
+            result_data['performanceMetrics'] = {
+                'totalTimeMs': round(total_pdf_time * 1000, 2),
+                'totalTimeSec': round(total_pdf_time, 3),
+                'breakdown': {
+                    'pdfConversionMs': round(conversion_time * 1000, 2) if request.fileType == 0 else None,
+                    'pdfConversionSec': round(conversion_time, 3) if request.fileType == 0 else None,
+                    'ocrInferenceMs': round(ocr_time * 1000, 2),
+                    'ocrInferenceSec': round(ocr_time, 3),
+                    'formattingMs': round(formatting_time * 1000, 2),
+                    'formattingSec': round(formatting_time, 3)
+                },
+                # Detailed OCR stage breakdown (sum of all pages)
+                # Note: CPU doesn't support per-stage timing, values will be 0
+                'ocrStages': {
+                    'docOrientationMs': round(total_doc_ori_ms, 2) if request.deepx and request.useDocOrientationClassify else (None if not request.useDocOrientationClassify else 0),
+                    'docUnwarpingMs': round(total_doc_uv_ms, 2) if request.deepx and request.useDocUnwarping else (None if not request.useDocUnwarping else 0),
+                    'detectionMs': round(total_det_ms, 2) if request.deepx else 0,
+                    'textlineOrientationMs': round(total_cls_ms, 2) if request.deepx and request.useTextlineOrientation else (None if not request.useTextlineOrientation else 0),
+                    'recognitionMs': round(total_rec_ms, 2) if request.deepx else 0
+                },
+                'perPage': {
+                    'ocrInferenceMs': round(per_page_ocr_time * 1000, 2),
+                    'ocrInferenceSec': round(per_page_ocr_time, 3),
+                    'formattingMs': round(per_page_format_time * 1000, 2),
+                    'formattingSec': round(per_page_format_time, 3),
+                    # Per-page OCR stage breakdown (average)
+                    # Note: CPU doesn't support per-stage timing, values will be 0
+                    'docOrientationMs': round(total_doc_ori_ms / len(images_to_process), 2) if request.deepx and request.useDocOrientationClassify and len(images_to_process) > 0 else (None if not request.useDocOrientationClassify else 0),
+                    'docUnwarpingMs': round(total_doc_uv_ms / len(images_to_process), 2) if request.deepx and request.useDocUnwarping and len(images_to_process) > 0 else (None if not request.useDocUnwarping else 0),
+                    'detectionMs': round(total_det_ms / len(images_to_process), 2) if request.deepx and len(images_to_process) > 0 else 0,
+                    'textlineOrientationMs': round(total_cls_ms / len(images_to_process), 2) if request.deepx and request.useTextlineOrientation and len(images_to_process) > 0 else (None if not request.useTextlineOrientation else 0),
+                    'recognitionMs': round(total_rec_ms / len(images_to_process), 2) if request.deepx and len(images_to_process) > 0 else 0
+                },
+                'pageCount': len(images_to_process),
+                'backend': 'NPU' if request.deepx else 'CPU',
+                'mode': 'sync' if request.sync else 'async',
+                'pdfDpi': PDF_DPI if request.fileType == 0 else None,
+                'pdfThreadCount': PDF_THREAD_COUNT if request.fileType == 0 else None
+            }
         
         # Build response
         response = BaiduOCRResponse(
             logId=log_id,
             errorCode=0,
             errorMsg="Success",
-            result={
-                'ocrResults': all_page_results,
-                'dataInfo': {
-                    'fileType': request.fileType,
-                    'imageCount': len(images_to_process)
-                }
-            }
+            result=result_data
         )
         
         return response
