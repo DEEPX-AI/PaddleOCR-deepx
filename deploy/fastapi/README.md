@@ -429,6 +429,77 @@ curl -X POST http://localhost:8081/batch_ocr \
   }'
 ```
 
+**Baidu Compatible OCR (Image) - `/api/v1/ocr`:**
+```bash
+# Encode image to base64
+IMAGE_BASE64=$(base64 -w 0 your_image.jpg)
+
+# Local environment
+curl -X POST http://localhost:8080/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$IMAGE_BASE64\",
+    \"fileType\": 1,
+    \"useDocOrientationClassify\": false,
+    \"useDocUnwarping\": false,
+    \"visualize\": false
+  }"
+
+# Docker environment
+curl -X POST http://localhost:8081/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$IMAGE_BASE64\",
+    \"fileType\": 1,
+    \"useDocOrientationClassify\": false,
+    \"useDocUnwarping\": false,
+    \"visualize\": false
+  }"
+```
+
+**Baidu Compatible OCR (PDF) - `/api/v1/ocr`:**
+```bash
+# Encode PDF to base64
+PDF_BASE64=$(base64 -w 0 document.pdf)
+
+# Local environment
+curl -X POST http://localhost:8080/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$PDF_BASE64\",
+    \"fileType\": 0,
+    \"useDocOrientationClassify\": true,
+    \"useDocUnwarping\": true,
+    \"visualize\": true
+  }"
+
+# Docker environment
+curl -X POST http://localhost:8081/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$PDF_BASE64\",
+    \"fileType\": 0,
+    \"useDocOrientationClassify\": true,
+    \"useDocUnwarping\": true,
+    \"visualize\": true
+  }"
+```
+
+**Baidu Compatible OCR with DEEPX NPU - `/api/v1/ocr`:**
+```bash
+# Use DEEPX NPU for hardware-accelerated inference
+IMAGE_BASE64=$(base64 -w 0 your_image.jpg)
+
+curl -X POST http://localhost:8080/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$IMAGE_BASE64\",
+    \"fileType\": 1,
+    \"deepx\": true,
+    \"sync\": false
+  }"
+```
+
 ---
 
 ## 📋 API Endpoints
@@ -496,6 +567,86 @@ Batch OCR for multiple images
     [/* image 1 results */],
     [/* image 2 results */]
   ]
+}
+```
+
+### POST /api/v1/ocr
+Baidu AI Studio OCR API compatible endpoint. Supports both images and PDFs with advanced preprocessing options.
+
+**Request parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `file` | string | Yes | - | Base64 encoded file content |
+| `fileType` | int | No | 1 | File type: 0=PDF, 1=Image |
+| `useDocOrientationClassify` | bool | No | false | Use document orientation classification |
+| `useDocUnwarping` | bool | No | false | Use document unwarping/distortion correction |
+| `useTextlineOrientation` | bool | No | false | Use text line orientation classification |
+| `textDetLimitSideLen` | int | No | 64 | Detection image side length limit |
+| `textDetLimitType` | string | No | "min" | Limit type: 'min' or 'max' |
+| `textDetThresh` | float | No | 0.3 | Text detection threshold |
+| `textDetBoxThresh` | float | No | 0.6 | Text detection box threshold |
+| `textDetUnclipRatio` | float | No | 1.5 | Text detection unclip ratio |
+| `textRecScoreThresh` | float | No | 0.0 | Text recognition score threshold |
+| `visualize` | bool | No | false | Return visualization images |
+| `deepx` | bool | No | false | Use DEEPX NPU for inference |
+| `sync` | bool | No | false | Use sync NPU mode instead of async pipeline |
+| `inflight` | bool | No | false | Include detailed performance timing information |
+
+**JSON request example (Image):**
+```json
+{
+  "file": "base64_encoded_image_string",
+  "fileType": 1,
+  "useDocOrientationClassify": false,
+  "useDocUnwarping": false,
+  "visualize": false
+}
+```
+
+**JSON request example (PDF with preprocessing):**
+```json
+{
+  "file": "base64_encoded_pdf_string",
+  "fileType": 0,
+  "useDocOrientationClassify": true,
+  "useDocUnwarping": true,
+  "visualize": true
+}
+```
+
+**JSON request example (DEEPX NPU):**
+```json
+{
+  "file": "base64_encoded_image_string",
+  "fileType": 1,
+  "deepx": true,
+  "sync": false
+}
+```
+
+**Response:**
+```json
+{
+  "logId": "uuid-string",
+  "errorCode": 0,
+  "errorMsg": "Success",
+  "result": {
+    "pages": [
+      {
+        "pageNo": 1,
+        "ocrResults": [
+          {
+            "bbox": [[x1, y1], [x2, y2], [x3, y3], [x4, y4]],
+            "text": "Recognized text",
+            "score": 0.95
+          }
+        ],
+        "ocrImage": "base64_visualization_image (if visualize=true)",
+        "inputImage": "base64_input_image (if visualize=true)"
+      }
+    ]
+  }
 }
 ```
 

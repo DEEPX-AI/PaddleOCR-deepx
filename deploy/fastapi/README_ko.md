@@ -429,6 +429,77 @@ curl -X POST http://localhost:8081/batch_ocr \
   }'
 ```
 
+**Baidu 호환 OCR (이미지) - `/api/v1/ocr`:**
+```bash
+# 이미지를 base64로 인코딩
+IMAGE_BASE64=$(base64 -w 0 your_image.jpg)
+
+# 로컬 환경
+curl -X POST http://localhost:8080/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$IMAGE_BASE64\",
+    \"fileType\": 1,
+    \"useDocOrientationClassify\": false,
+    \"useDocUnwarping\": false,
+    \"visualize\": false
+  }"
+
+# Docker 환경
+curl -X POST http://localhost:8081/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$IMAGE_BASE64\",
+    \"fileType\": 1,
+    \"useDocOrientationClassify\": false,
+    \"useDocUnwarping\": false,
+    \"visualize\": false
+  }"
+```
+
+**Baidu 호환 OCR (PDF) - `/api/v1/ocr`:**
+```bash
+# PDF를 base64로 인코딩
+PDF_BASE64=$(base64 -w 0 document.pdf)
+
+# 로컬 환경
+curl -X POST http://localhost:8080/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$PDF_BASE64\",
+    \"fileType\": 0,
+    \"useDocOrientationClassify\": true,
+    \"useDocUnwarping\": true,
+    \"visualize\": true
+  }"
+
+# Docker 환경
+curl -X POST http://localhost:8081/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$PDF_BASE64\",
+    \"fileType\": 0,
+    \"useDocOrientationClassify\": true,
+    \"useDocUnwarping\": true,
+    \"visualize\": true
+  }"
+```
+
+**Baidu 호환 OCR with DEEPX NPU - `/api/v1/ocr`:**
+```bash
+# DEEPX NPU를 사용한 하드웨어 가속 추론
+IMAGE_BASE64=$(base64 -w 0 your_image.jpg)
+
+curl -X POST http://localhost:8080/api/v1/ocr \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": \"$IMAGE_BASE64\",
+    \"fileType\": 1,
+    \"deepx\": true,
+    \"sync\": false
+  }"
+```
+
 ---
 
 ## 📋 API 엔드포인트
@@ -496,6 +567,86 @@ curl -X POST http://localhost:8081/batch_ocr \
     [/* image 1 results */],
     [/* image 2 results */]
   ]
+}
+```
+
+### POST /api/v1/ocr
+Baidu AI Studio OCR API 호환 엔드포인트. 이미지와 PDF를 모두 지원하며 고급 전처리 옵션을 제공합니다.
+
+**요청 파라미터:**
+
+| 파라미터 | 타입 | 필수 | 기본값 | 설명 |
+|----------|------|------|--------|------|
+| `file` | string | 예 | - | Base64 인코딩된 파일 내용 |
+| `fileType` | int | 아니오 | 1 | 파일 타입: 0=PDF, 1=이미지 |
+| `useDocOrientationClassify` | bool | 아니오 | false | 문서 방향 분류 사용 |
+| `useDocUnwarping` | bool | 아니오 | false | 문서 왜곡 보정 사용 |
+| `useTextlineOrientation` | bool | 아니오 | false | 텍스트 라인 방향 분류 사용 |
+| `textDetLimitSideLen` | int | 아니오 | 64 | 검출 이미지 측면 길이 제한 |
+| `textDetLimitType` | string | 아니오 | "min" | 제한 타입: 'min' 또는 'max' |
+| `textDetThresh` | float | 아니오 | 0.3 | 텍스트 검출 임계값 |
+| `textDetBoxThresh` | float | 아니오 | 0.6 | 텍스트 검출 박스 임계값 |
+| `textDetUnclipRatio` | float | 아니오 | 1.5 | 텍스트 검출 언클립 비율 |
+| `textRecScoreThresh` | float | 아니오 | 0.0 | 텍스트 인식 점수 임계값 |
+| `visualize` | bool | 아니오 | false | 시각화 이미지 반환 |
+| `deepx` | bool | 아니오 | false | DEEPX NPU 추론 사용 |
+| `sync` | bool | 아니오 | false | 비동기 파이프라인 대신 동기 NPU 모드 사용 |
+| `inflight` | bool | 아니오 | false | 상세 성능 타이밍 정보 포함 |
+
+**JSON 요청 예시 (이미지):**
+```json
+{
+  "file": "base64_encoded_image_string",
+  "fileType": 1,
+  "useDocOrientationClassify": false,
+  "useDocUnwarping": false,
+  "visualize": false
+}
+```
+
+**JSON 요청 예시 (PDF + 전처리):**
+```json
+{
+  "file": "base64_encoded_pdf_string",
+  "fileType": 0,
+  "useDocOrientationClassify": true,
+  "useDocUnwarping": true,
+  "visualize": true
+}
+```
+
+**JSON 요청 예시 (DEEPX NPU):**
+```json
+{
+  "file": "base64_encoded_image_string",
+  "fileType": 1,
+  "deepx": true,
+  "sync": false
+}
+```
+
+**응답:**
+```json
+{
+  "logId": "uuid-string",
+  "errorCode": 0,
+  "errorMsg": "Success",
+  "result": {
+    "pages": [
+      {
+        "pageNo": 1,
+        "ocrResults": [
+          {
+            "bbox": [[x1, y1], [x2, y2], [x3, y3], [x4, y4]],
+            "text": "인식된 텍스트",
+            "score": 0.95
+          }
+        ],
+        "ocrImage": "base64_시각화_이미지 (visualize=true인 경우)",
+        "inputImage": "base64_입력_이미지 (visualize=true인 경우)"
+      }
+    ]
+  }
 }
 ```
 

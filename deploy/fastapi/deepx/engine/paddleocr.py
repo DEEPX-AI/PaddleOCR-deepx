@@ -459,6 +459,10 @@ class DocumentPreprocessingPipeline:
 
         self.orientation_node = DocumentOrientationNode(orientation_model) if orientation_model else None
         self.unwarping_node = DocumentUnwarpingNode(unwarping_model) if unwarping_model else None
+        
+        # Store last call's individual latencies for performance reporting
+        self.last_ori_latency = 0.0
+        self.last_uv_latency = 0.0
 
     def __call__(self, image: np.ndarray) -> Tuple[List[Dict], float]:
         """
@@ -473,15 +477,21 @@ class DocumentPreprocessingPipeline:
         total_latency = 0
         current_image = image.copy()
         
+        # Reset individual latencies
+        self.last_ori_latency = 0.0
+        self.last_uv_latency = 0.0
+        
         if self.use_doc_orientation and self.orientation_node is not None:
             orientation_results, orientation_latency = self.orientation_node(current_image)
             total_latency += orientation_latency
+            self.last_ori_latency = orientation_latency
             _, rotated_image = orientation_results
             current_image = rotated_image
 
         if self.use_doc_unwarping and self.unwarping_node is not None:
             current_image, unwarping_latency = self.unwarping_node(current_image)
             total_latency += unwarping_latency
+            self.last_uv_latency = unwarping_latency
             
         return current_image, total_latency
     
@@ -592,7 +602,7 @@ class PaddleOcr():
             debug_output_path: Debug information save path (optional)
             
         Returns:
-            tuple: (box_coordinates, cropped_images, recognition_results, preprocessed_image)
+            tuple: (box_coordinates, cropped_images, recognition_results, preprocessed_image, debug_data)
         """
         
         debug_data = {
@@ -600,19 +610,52 @@ class PaddleOcr():
             'timestamp': datetime.now().isoformat(),
             'detection': {},
             'classification': {},
-            'recognition': {}
+            'recognition': {},
+            'latency_ms': {
+                'doc_ori': 0.0,
+                'doc_uv': 0.0,
+                'det': 0.0,
+                'cls': 0.0,
+                'rec': 0.0,
+                'total': 0.0
+            }
         }
         
+        import time
+        pipeline_start = time.time()
+        
         processed_img = img
+        doc_ori_latency = 0.0
+        doc_uv_latency = 0.0
+        det_latency = 0.0
+        cls_latency = 0.0
+        rec_latency = 0.0
         
         # 1. Document Preprocessing (PP-OCRv5와 동일한 로직)
         # Check use_doc_preprocessing flag instead of just doc_preprocessing existence
         if self.use_doc_preprocessing and self.doc_preprocessing is not None:
             processed_img, preprocessing_latency = self.doc_preprocessing(img)
             self.doc_preprocessing_time_duration += preprocessing_latency * 1000
+            # Document preprocessing includes both orientation and unwarping
+            # Get individual latencies if available
+            if hasattr(self.doc_preprocessing, 'last_ori_latency'):
+                doc_ori_latency = self.doc_preprocessing.last_ori_latency * 1000
+            if hasattr(self.doc_preprocessing, 'last_uv_latency'):
+                doc_uv_latency = self.doc_preprocessing.last_uv_latency * 1000
+            # Fallback: if individual latencies not available, use total
+            if doc_ori_latency == 0.0 and doc_uv_latency == 0.0:
+                # Split by whether each is enabled
+                if self.doc_preprocessing.use_doc_orientation and self.doc_preprocessing.use_doc_unwarping:
+                    doc_ori_latency = preprocessing_latency * 500  # Half each
+                    doc_uv_latency = preprocessing_latency * 500
+                elif self.doc_preprocessing.use_doc_orientation:
+                    doc_ori_latency = preprocessing_latency * 1000
+                elif self.doc_preprocessing.use_doc_unwarping:
+                    doc_uv_latency = preprocessing_latency * 1000
         
         # 2. Text Detection (전처리된 이미지에서 수행)
         det_outputs, _, engine_latency = self.detection_node(processed_img)
+        det_latency = engine_latency * 1000
         boxes = sorted_boxes(det_outputs)
 
         self.detection_time_duration += engine_latency * 1000
@@ -642,6 +685,7 @@ class PaddleOcr():
         debug_data['classification']['results'] = []
         if self.use_textline_orientation:
             cls_results, _, engine_latency = self.classification_node(crops)
+            cls_latency = engine_latency * 1000
             if crops:
                 self.classification_time_duration += engine_latency / len(crops) * 1000
             
@@ -661,6 +705,7 @@ class PaddleOcr():
             debug_data['classification']['skipped'] = True
                 
         rec_results, _, engine_latency, min_latency = self.recognition_node(processed_img, boxes, crops)
+        rec_latency = engine_latency * 1000
         if crops:
             self.recognition_time_duration += engine_latency / len(crops) * 1000
         self.min_recognition_time_duration += min_latency * 1000
@@ -674,6 +719,19 @@ class PaddleOcr():
                 'text': result['text'],
                 'score': float(result['score'])
             })
+        
+        # Calculate total pipeline latency and store all latencies
+        pipeline_end = time.time()
+        total_latency = (pipeline_end - pipeline_start) * 1000
+        
+        debug_data['latency_ms'] = {
+            'doc_ori': doc_ori_latency,
+            'doc_uv': doc_uv_latency,
+            'det': det_latency,
+            'cls': cls_latency,
+            'rec': rec_latency,
+            'total': total_latency
+        }
         
         self.ocr_run_count += 1
         return boxes, crops, rec_results, processed_img, debug_data

@@ -140,6 +140,29 @@ def sample_image_url():
     return "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/release/2.6/doc/imgs_en/254.jpg"
 
 
+@pytest.fixture(scope="session")
+def test_pdf_path():
+    """Get path to test PDF file"""
+    # Use DEEPX_PATH environment variable if set, otherwise use relative path
+    deepx_path_str = os.getenv('DEEPX_PATH')
+    if deepx_path_str:
+        deepx_path = Path(deepx_path_str)
+    else:
+        deepx_path = Path(__file__).parent / "deepx"
+    
+    pdf_path = deepx_path / "BVRC_Meeting_Minutes_2024-04.pdf"
+    if not pdf_path.exists():
+        pytest.skip(f"Test PDF file not found: {pdf_path}")
+    return pdf_path
+
+
+@pytest.fixture(scope="session")
+def test_pdf_base64(test_pdf_path):
+    """Load test PDF as base64"""
+    with open(test_pdf_path, 'rb') as f:
+        return base64.b64encode(f.read()).decode('utf-8')
+
+
 # ============================================================================
 # Test: Health Check
 # ============================================================================
@@ -164,17 +187,63 @@ class TestHealthCheck:
 class TestBaiduOCRAPI:
     """Baidu AI Studio OCR API compatibility tests"""
     
-    def save_visualization_images(self, test_name: str, image_name: str, response_data: dict, backend: str = "cpu"):
+    def get_backend_dir_name(self, use_deepx: bool, use_sync: bool) -> str:
+        """Generate backend directory name based on device and mode
+        
+        Args:
+            use_deepx: True for NPU, False for CPU
+            use_sync: True for sync mode, False for async mode
+            
+        Returns:
+            Directory name like 'deepx-npu-async' or 'cpu-sync'
+        """
+        device = "deepx-npu" if use_deepx else "cpu"
+        mode = "sync" if use_sync else "async"
+        return f"{device}-{mode}"
+    
+    def save_response_json(self, test_name: str, file_name: str, response_data: dict, use_deepx: bool, use_sync: bool):
+        """Save response JSON to file
+        
+        Args:
+            test_name: Test case name (e.g., 'test_basic')
+            file_name: Output filename without extension (e.g., 'image_1')
+            response_data: Full API response data
+            use_deepx: True for NPU, False for CPU
+            use_sync: True for sync mode, False for async mode
+        """
+        backend_dir = self.get_backend_dir_name(use_deepx, use_sync)
+        test_dir = OUTPUT_DIR / test_name / backend_dir
+        test_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create a copy of response data without large base64 images for JSON file
+        response_copy = json.loads(json.dumps(response_data))
+        
+        # Optionally truncate base64 image data to reduce file size
+        if "result" in response_copy and "ocrResults" in response_copy["result"]:
+            for page_result in response_copy["result"]["ocrResults"]:
+                for key in ["ocrImage", "inputImage", "docPreprocessingImage"]:
+                    if page_result.get(key):
+                        # Truncate base64 to first 100 chars + indicator
+                        page_result[key] = page_result[key][:100] + "...[truncated]"
+        
+        output_path = test_dir / f"{file_name}_response.json"
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(response_copy, f, ensure_ascii=False, indent=2)
+        print(f"   Saved response JSON: {output_path}")
+    
+    def save_visualization_images(self, test_name: str, image_name: str, response_data: dict, use_deepx: bool, use_sync: bool):
         """Save visualization images from response to files
         
         Args:
             test_name: Test case name (e.g., 'test_basic')
             image_name: Image filename without extension (e.g., 'image_1')
             response_data: OCR response data
-            backend: Backend name ('cpu' or 'deepx-npu')
+            use_deepx: True for NPU, False for CPU
+            use_sync: True for sync mode, False for async mode
         """
         # Create test-specific directory with backend subdirectory
-        test_dir = OUTPUT_DIR / test_name / backend
+        backend_dir = self.get_backend_dir_name(use_deepx, use_sync)
+        test_dir = OUTPUT_DIR / test_name / backend_dir
         test_dir.mkdir(parents=True, exist_ok=True)
         
         ocr_results = response_data.get("result", {}).get("ocrResults", [])
@@ -225,8 +294,9 @@ class TestBaiduOCRAPI:
             assert "result" in data
             assert "ocrResults" in data["result"]
             
-            # Save visualization images
-            self.save_visualization_images("test_basic", img_data['name'], data, backend_name)
+            # Save response JSON and visualization images
+            self.save_response_json("test_basic", img_data['name'], data, use_deepx, use_sync)
+            self.save_visualization_images("test_basic", img_data['name'], data, use_deepx, use_sync)
         
         print(f"✅ Baidu OCR basic test passed for {len(test_images_base64)} images ({backend_name})")
     
@@ -248,8 +318,9 @@ class TestBaiduOCRAPI:
             data = response.json()
             assert data["errorCode"] == 0
             
-            # Save visualization images
-            self.save_visualization_images("test_doc_orientation", img_data['name'], data, backend_name)
+            # Save response JSON and visualization images
+            self.save_response_json("test_doc_orientation", img_data['name'], data, use_deepx, use_sync)
+            self.save_visualization_images("test_doc_orientation", img_data['name'], data, use_deepx, use_sync)
         
         print(f"✅ Document orientation classification test passed for {len(test_images_base64)} images ({backend_name})")
     
@@ -271,8 +342,9 @@ class TestBaiduOCRAPI:
             data = response.json()
             assert data["errorCode"] == 0
             
-            # Save visualization images
-            self.save_visualization_images("test_doc_unwarping", img_data['name'], data, backend_name)
+            # Save response JSON and visualization images
+            self.save_response_json("test_doc_unwarping", img_data['name'], data, use_deepx, use_sync)
+            self.save_visualization_images("test_doc_unwarping", img_data['name'], data, use_deepx, use_sync)
         
         print(f"✅ Document unwarping test passed for {len(test_images_base64)} images ({backend_name})")
     
@@ -294,8 +366,9 @@ class TestBaiduOCRAPI:
             data = response.json()
             assert data["errorCode"] == 0
             
-            # Save visualization images
-            self.save_visualization_images("test_textline_orientation", img_data['name'], data, backend_name)
+            # Save response JSON and visualization images
+            self.save_response_json("test_textline_orientation", img_data['name'], data, use_deepx, use_sync)
+            self.save_visualization_images("test_textline_orientation", img_data['name'], data, use_deepx, use_sync)
         
         print(f"✅ Text line orientation test passed for {len(test_images_base64)} images ({backend_name})")
     
@@ -321,8 +394,9 @@ class TestBaiduOCRAPI:
             data = response.json()
             assert data["errorCode"] == 0
             
-            # Save visualization images
-            self.save_visualization_images("test_detection_params", img_data['name'], data, backend_name)
+            # Save response JSON and visualization images
+            self.save_response_json("test_detection_params", img_data['name'], data, use_deepx, use_sync)
+            self.save_visualization_images("test_detection_params", img_data['name'], data, use_deepx, use_sync)
         
         print(f"✅ Detection parameters test passed for {len(test_images_base64)} images ({backend_name})")
     
@@ -344,8 +418,9 @@ class TestBaiduOCRAPI:
             data = response.json()
             assert data["errorCode"] == 0
             
-            # Save visualization images
-            self.save_visualization_images("test_recognition_params", img_data['name'], data, backend_name)
+            # Save response JSON and visualization images
+            self.save_response_json("test_recognition_params", img_data['name'], data, use_deepx, use_sync)
+            self.save_visualization_images("test_recognition_params", img_data['name'], data, use_deepx, use_sync)
         
         print(f"✅ Recognition parameters test passed for {len(test_images_base64)} images ({backend_name})")
     
@@ -373,8 +448,9 @@ class TestBaiduOCRAPI:
                 assert "ocrImage" in ocr_results[0]
                 assert "inputImage" in ocr_results[0]
             
-            # Save visualization images
-            self.save_visualization_images("test_visualization", img_data['name'], data, backend_name)
+            # Save response JSON and visualization images
+            self.save_response_json("test_visualization", img_data['name'], data, use_deepx, use_sync)
+            self.save_visualization_images("test_visualization", img_data['name'], data, use_deepx, use_sync)
         
         print(f"✅ Visualization test passed for {len(test_images_base64)} images ({backend_name})")
     
@@ -414,8 +490,9 @@ class TestBaiduOCRAPI:
             assert data["result"]["dataInfo"]["fileType"] == 1
             assert data["result"]["dataInfo"]["imageCount"] == 1
             
-            # Save visualization images
-            self.save_visualization_images("test_all_parameters", img_data['name'], data, backend_name)
+            # Save response JSON and visualization images
+            self.save_response_json("test_all_parameters", img_data['name'], data, use_deepx, use_sync)
+            self.save_visualization_images("test_all_parameters", img_data['name'], data, use_deepx, use_sync)
         
         print(f"✅ All 12 parameters test passed for {len(test_images_base64)} images ({backend_name})")
     
@@ -431,17 +508,285 @@ class TestBaiduOCRAPI:
         assert response.status_code == 400
         print(f"✅ Invalid base64 handling test passed")
     
-    def test_baidu_ocr_pdf_not_supported(self, wait_for_service, test_image_base64):
-        """Test Baidu OCR with PDF file type (should fail)"""
+    def test_baidu_ocr_pdf_processing(self, wait_for_service, test_pdf_base64, use_deepx, use_sync, backend_name):
+        """Test Baidu OCR with actual PDF file (fileType=0)"""
         payload = {
-            "file": test_image_base64,
-            "fileType": 0  # PDF
+            "file": test_pdf_base64,
+            "fileType": 0,  # PDF
+            "useTextlineOrientation": False,
+            "textRecScoreThresh": 0.3,
+            "visualize": False,
+            "deepx": use_deepx,
+            "sync": use_sync
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/v1/ocr", json=payload, timeout=600)
+        
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text[:500]}"
+        data = response.json()
+        assert data["errorCode"] == 0, f"Error: {data.get('errorMsg')}"
+        assert data["errorMsg"] == "Success"
+        assert "result" in data
+        assert "ocrResults" in data["result"]
+        assert "dataInfo" in data["result"]
+        assert data["result"]["dataInfo"]["fileType"] == 0
+        # PDF should have multiple pages (limited to MAX_PDF_PAGES=3)
+        assert data["result"]["dataInfo"]["imageCount"] >= 1
+        
+        # Check OCR results exist for each page
+        ocr_results = data["result"]["ocrResults"]
+        assert len(ocr_results) >= 1
+        
+        for idx, page_result in enumerate(ocr_results):
+            assert "prunedResult" in page_result
+            pruned = page_result["prunedResult"]
+            assert "dt_polys" in pruned
+            assert "rec_texts" in pruned
+            assert "rec_scores" in pruned
+            print(f"   Page {idx + 1}: {len(pruned['rec_texts'])} text regions detected")
+        
+        # Save response JSON
+        self.save_response_json("test_pdf_processing", "pdf_document", data, use_deepx, use_sync)
+        
+        print(f"✅ PDF processing test passed: {len(ocr_results)} page(s) processed ({backend_name})")
+    
+    def test_baidu_ocr_pdf_with_visualization(self, wait_for_service, test_pdf_base64, use_deepx, use_sync, backend_name):
+        """Test Baidu OCR PDF with visualization enabled"""
+        payload = {
+            "file": test_pdf_base64,
+            "fileType": 0,  # PDF
+            "useTextlineOrientation": False,
+            "visualize": True,
+            "deepx": use_deepx,
+            "sync": use_sync
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/v1/ocr", json=payload, timeout=600)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["errorCode"] == 0
+        
+        ocr_results = data["result"]["ocrResults"]
+        for idx, page_result in enumerate(ocr_results):
+            # Visualization should include ocrImage and inputImage
+            assert page_result.get("ocrImage") is not None, f"Page {idx + 1}: ocrImage missing"
+            assert page_result.get("inputImage") is not None, f"Page {idx + 1}: inputImage missing"
+        
+        # Save response JSON and visualization images
+        self.save_response_json("test_pdf_visualization", "pdf_document", data, use_deepx, use_sync)
+        self.save_visualization_images("test_pdf_visualization", "pdf_document", data, use_deepx, use_sync)
+        
+        print(f"✅ PDF visualization test passed: {len(ocr_results)} page(s) ({backend_name})")
+    
+    def test_baidu_ocr_inflight_basic(self, wait_for_service, test_images_base64, use_deepx, use_sync, backend_name):
+        """Test Baidu OCR with inflight=true returns performance metrics"""
+        img_data = test_images_base64[0]  # Use first image only
+        
+        payload = {
+            "file": img_data['base64'],
+            "fileType": 1,
+            "inflight": True,
+            "deepx": use_deepx,
+            "sync": use_sync
         }
         
         response = requests.post(f"{BASE_URL}/api/v1/ocr", json=payload)
         
-        assert response.status_code == 400
-        print(f"✅ PDF not supported test passed")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["errorCode"] == 0
+        assert "result" in data
+        
+        # Check performanceMetrics exists when inflight=true
+        assert "performanceMetrics" in data["result"], "performanceMetrics should be present when inflight=true"
+        
+        metrics = data["result"]["performanceMetrics"]
+        
+        # Validate required fields
+        assert "totalTimeMs" in metrics
+        assert "totalTimeSec" in metrics
+        assert "breakdown" in metrics
+        assert "perPage" in metrics
+        assert "pageCount" in metrics
+        assert "backend" in metrics
+        assert "mode" in metrics
+        
+        # Validate breakdown fields
+        breakdown = metrics["breakdown"]
+        assert "ocrInferenceMs" in breakdown
+        assert "ocrInferenceSec" in breakdown
+        assert "formattingMs" in breakdown
+        assert "formattingSec" in breakdown
+        
+        # Validate perPage fields
+        per_page = metrics["perPage"]
+        assert "ocrInferenceMs" in per_page
+        assert "ocrInferenceSec" in per_page
+        assert "formattingMs" in per_page
+        assert "formattingSec" in per_page
+        
+        # Validate backend and mode values
+        expected_backend = "NPU" if use_deepx else "CPU"
+        expected_mode = "sync" if use_sync else "async"
+        assert metrics["backend"] == expected_backend, f"Expected backend={expected_backend}, got {metrics['backend']}"
+        assert metrics["mode"] == expected_mode, f"Expected mode={expected_mode}, got {metrics['mode']}"
+        
+        # Save response JSON
+        self.save_response_json("test_inflight_basic", img_data['name'], data, use_deepx, use_sync)
+        
+        print(f"✅ Inflight basic test passed ({backend_name})")
+        print(f"   Performance: total={metrics['totalTimeSec']:.3f}s, ocr={breakdown['ocrInferenceSec']:.3f}s, format={breakdown['formattingSec']:.3f}s")
+    
+    def test_baidu_ocr_inflight_false(self, wait_for_service, test_images_base64, use_deepx, use_sync, backend_name):
+        """Test Baidu OCR with inflight=false (default) does NOT return performance metrics"""
+        img_data = test_images_base64[0]  # Use first image only
+        
+        payload = {
+            "file": img_data['base64'],
+            "fileType": 1,
+            "inflight": False,
+            "deepx": use_deepx,
+            "sync": use_sync
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/v1/ocr", json=payload)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["errorCode"] == 0
+        assert "result" in data
+        
+        # performanceMetrics should NOT be present when inflight=false
+        assert "performanceMetrics" not in data["result"], "performanceMetrics should NOT be present when inflight=false"
+        
+        # Save response JSON
+        self.save_response_json("test_inflight_false", img_data['name'], data, use_deepx, use_sync)
+        
+        print(f"✅ Inflight=false test passed - no metrics returned ({backend_name})")
+    
+    def test_baidu_ocr_inflight_default(self, wait_for_service, test_images_base64, use_deepx, use_sync, backend_name):
+        """Test Baidu OCR without inflight parameter (default=false) does NOT return performance metrics"""
+        img_data = test_images_base64[0]  # Use first image only
+        
+        payload = {
+            "file": img_data['base64'],
+            "fileType": 1,
+            # No inflight parameter - should default to false
+            "deepx": use_deepx,
+            "sync": use_sync
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/v1/ocr", json=payload)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["errorCode"] == 0
+        assert "result" in data
+        
+        # performanceMetrics should NOT be present when inflight is not specified (default=false)
+        assert "performanceMetrics" not in data["result"], "performanceMetrics should NOT be present by default"
+        
+        # Save response JSON
+        self.save_response_json("test_inflight_default", img_data['name'], data, use_deepx, use_sync)
+        
+        print(f"✅ Inflight default test passed - no metrics returned ({backend_name})")
+    
+    def test_baidu_ocr_pdf_inflight(self, wait_for_service, test_pdf_base64, use_deepx, use_sync, backend_name):
+        """Test Baidu OCR PDF with inflight=true returns PDF-specific performance metrics"""
+        payload = {
+            "file": test_pdf_base64,
+            "fileType": 0,  # PDF
+            "inflight": True,
+            "useTextlineOrientation": False,
+            "deepx": use_deepx,
+            "sync": use_sync
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/v1/ocr", json=payload, timeout=600)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["errorCode"] == 0
+        assert "result" in data
+        
+        # Check performanceMetrics exists
+        assert "performanceMetrics" in data["result"], "performanceMetrics should be present for PDF with inflight=true"
+        
+        metrics = data["result"]["performanceMetrics"]
+        
+        # PDF-specific fields should be present
+        breakdown = metrics["breakdown"]
+        assert "pdfConversionMs" in breakdown, "pdfConversionMs should be present for PDF"
+        assert "pdfConversionSec" in breakdown, "pdfConversionSec should be present for PDF"
+        assert breakdown["pdfConversionMs"] is not None, "pdfConversionMs should not be None for PDF"
+        assert breakdown["pdfConversionSec"] is not None, "pdfConversionSec should not be None for PDF"
+        
+        # PDF DPI and thread count should be present
+        assert "pdfDpi" in metrics, "pdfDpi should be present for PDF"
+        assert "pdfThreadCount" in metrics, "pdfThreadCount should be present for PDF"
+        assert metrics["pdfDpi"] is not None, "pdfDpi should not be None for PDF"
+        assert metrics["pdfThreadCount"] is not None, "pdfThreadCount should not be None for PDF"
+        
+        # Validate page count
+        assert metrics["pageCount"] >= 1
+        
+        print(f"✅ PDF inflight test passed ({backend_name})")
+        print(f"   Pages: {metrics['pageCount']}, DPI: {metrics['pdfDpi']}, Threads: {metrics['pdfThreadCount']}")
+        print(f"   Performance: total={metrics['totalTimeSec']:.3f}s, pdf_conv={breakdown['pdfConversionSec']:.3f}s, ocr={breakdown['ocrInferenceSec']:.3f}s, format={breakdown['formattingSec']:.3f}s")
+        print(f"   Per-page OCR: {metrics['perPage']['ocrInferenceSec']:.3f}s")
+        
+        # Save response JSON
+        self.save_response_json("test_pdf_inflight", "pdf_document", data, use_deepx, use_sync)
+    
+    def test_baidu_ocr_inflight_all_parameters(self, wait_for_service, test_images_base64, use_deepx, use_sync, backend_name):
+        """Test Baidu OCR with all parameters including inflight"""
+        img_data = test_images_base64[0]  # Use first image only
+        
+        payload = {
+            "file": img_data['base64'],
+            "fileType": 1,
+            # Preprocessing parameters
+            "useDocOrientationClassify": True,
+            "useDocUnwarping": True,
+            "useTextlineOrientation": True,
+            # Detection parameters
+            "textDetLimitSideLen": 1920,
+            "textDetLimitType": "max",
+            "textDetThresh": 0.3,
+            "textDetBoxThresh": 0.6,
+            "textDetUnclipRatio": 1.8,
+            # Recognition parameters
+            "textRecScoreThresh": 0.55,
+            # Visualization
+            "visualize": True,
+            # Performance metrics
+            "inflight": True,
+            # DEEPX NPU
+            "deepx": use_deepx,
+            "sync": use_sync
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/v1/ocr", json=payload)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["errorCode"] == 0
+        
+        # Both OCR results and performance metrics should be present
+        assert "ocrResults" in data["result"]
+        assert "performanceMetrics" in data["result"]
+        
+        metrics = data["result"]["performanceMetrics"]
+        expected_backend = "NPU" if use_deepx else "CPU"
+        assert metrics["backend"] == expected_backend
+        
+        # Save response JSON and visualization images
+        self.save_response_json("test_inflight_all_params", img_data['name'], data, use_deepx, use_sync)
+        self.save_visualization_images("test_inflight_all_params", img_data['name'], data, use_deepx, use_sync)
+        
+        print(f"✅ Inflight with all parameters test passed ({backend_name})")
+        print(f"   Total time: {metrics['totalTimeSec']:.3f}s")
 
 
 # ============================================================================
