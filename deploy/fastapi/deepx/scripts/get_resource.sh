@@ -86,9 +86,17 @@ download() {
     if [ -e "$ARCHIVE_TARGET_PATH" ] && [ "$USE_FORCE" -eq 0 ]; then
         print_colored "archive file downloaded path($ARCHIVE_TARGET_PATH) is already exist. so, skip to download file to output path"
         if [ ! -e "$DOWNLOAD_PATH" ]; then
+            # Check if DOWNLOAD_PATH is a broken symlink and remove it first
+            if [ -L "$DOWNLOAD_PATH" ] && [ ! -e "$DOWNLOAD_PATH" ]; then
+                print_colored_v2 "WARNING" "Broken symlink detected at '$DOWNLOAD_PATH'. Removing and recreating..."
+                rm -f "$DOWNLOAD_PATH"
+                if [ $? -ne 0 ]; then
+                    exit_with_message "Failed to remove broken symlink '$DOWNLOAD_PATH'. Check permissions."
+                fi
+            fi
             print_colored "make symlink '$ARCHIVE_TARGET_PATH' -> '$DOWNLOAD_PATH'"
             mkdir -p "$DOWNLOAD_DIR" || exit_with_message "Failed to create directory '$DOWNLOAD_DIR'. Check permissions."
-            ln -s "$(readlink -f "$ARCHIVE_TARGET_PATH")" "$(readlink -f "$DOWNLOAD_PATH")"
+            ln -s "$(readlink -f "$ARCHIVE_TARGET_PATH")" "$DOWNLOAD_PATH"
             if [ $? -ne 0 ]; then
                 exit_with_message "Failed to create symlink '$ARCHIVE_TARGET_PATH' -> '$DOWNLOAD_PATH'. Check permissions."
             fi
