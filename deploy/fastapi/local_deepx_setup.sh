@@ -20,6 +20,7 @@ SETUP_NPU="true"
 MODEL_TYPE="mobile"  # default: mobile
 USE_MOBILE_FLAG=false
 USE_SERVER_FLAG=false
+FORCE_DEEPX_MODELS=false
 
 # DEEPX Configuration
 DX_RT_PATH=""  # Required for NPU setup
@@ -77,6 +78,10 @@ while [[ $# -gt 0 ]]; do
             SETUP_NPU="false"
             shift
             ;;
+        --force)
+            FORCE_DEEPX_MODELS=true
+            shift
+            ;;
         --python)
             PYTHON_VERSION="$2"
             shift 2
@@ -101,6 +106,7 @@ while [[ $# -gt 0 ]]; do
             echo -e "  ${GREEN}--no-models${NC}          ${YELLOW}Skip downloading PaddleOCR models${NC}"
             echo -e "  ${GREEN}--no-deepx-models${NC}    ${YELLOW}Skip downloading DEEPX models${NC}"
             echo -e "  ${GREEN}--no-npu${NC}             ${YELLOW}Skip NPU setup (CPU only)${NC}"
+            echo -e "  ${GREEN}--force${NC}              ${YELLOW}Force re-download DEEPX models (removes existing and re-downloads)${NC}"
             echo -e "  ${GREEN}--python${NC} VERSION     ${YELLOW}Specify Python version (default: auto-detect, 3.10+ required for NPU)${NC}"
             echo -e "  ${GREEN}--inter-threads${NC} N    ${YELLOW}Set CUSTOM_INTER_OP_THREADS_COUNT (default: 1)${NC}"
             echo -e "  ${GREEN}--intra-threads${NC} N    ${YELLOW}Set CUSTOM_INTRA_OP_THREADS_COUNT (default: 3)${NC}"
@@ -467,7 +473,14 @@ if [ "$DOWNLOAD_DEEPX_MODELS" = "true" ] && [ "$SETUP_NPU" = "true" ]; then
         exit 1
     fi
     
-    bash "$SETUP_MODELS_SCRIPT" --deepx-path "$DEEPX_PATH"
+    # Build command with optional --force flag
+    SETUP_MODELS_CMD="bash \"$SETUP_MODELS_SCRIPT\" --deepx-path \"$DEEPX_PATH\""
+    if [ "$FORCE_DEEPX_MODELS" = "true" ]; then
+        echo -e "${YELLOW}Force mode enabled: Re-downloading DEEPX models...${NC}"
+        SETUP_MODELS_CMD="$SETUP_MODELS_CMD --force"
+    fi
+    
+    eval $SETUP_MODELS_CMD
     
     if [ $? -ne 0 ]; then
         echo -e "${RED}Error: DEEPX models setup failed${NC}"
