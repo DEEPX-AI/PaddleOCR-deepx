@@ -43,6 +43,44 @@ LAZY_LOAD = os.getenv('LAZY_LOAD', 'false').lower() == 'true'  # Load models on 
 SETUP_NPU = os.getenv('SETUP_NPU', 'false').lower() == 'true'  # Enable NPU support (true) or CPU only (false)
 
 # ============================================================================
+# OCR Pipeline Version (PP-OCRv5 / PP-OCRv6)
+# ============================================================================
+
+def get_ocr_version():
+    """
+    OCR pipeline version selected by the OCR_VERSION environment variable.
+
+    Returns 'v5' (default, backward compatible) or 'v6'. Any unrecognised value
+    falls back to 'v5' so an existing deployment never breaks on a typo.
+    """
+    version = os.getenv('OCR_VERSION', 'v5').lower()
+    return version if version in ('v5', 'v6') else 'v5'
+
+
+def get_v6_model_dir(deepx_path):
+    """
+    Directory holding the PP-OCRv6 .dxnn models.
+
+    Defaults to engine/model_files/v6; V6_MODEL_DIR overrides it so an
+    alternative model set can be benchmarked without moving files around.
+    """
+    override = os.getenv('V6_MODEL_DIR')
+    if override:
+        return Path(override)
+    return deepx_path / 'engine' / 'model_files' / 'v6'
+
+
+def get_v6_model_size():
+    """
+    PP-OCRv6 model size selected by the V6_MODEL_SIZE environment variable.
+
+    Returns 's' (smaller/faster) or 'm' (default, more accurate).
+    """
+    size = os.getenv('V6_MODEL_SIZE', 'm').lower()
+    return size if size in ('s', 'm') else 'm'
+
+
+# ============================================================================
 # Model Path Configuration
 # ============================================================================
 
@@ -131,12 +169,31 @@ def load_npu_models_once():
         print(f"❌ {error_msg}")
         raise HTTPException(status_code=503, detail=error_msg)
     
+    # PP-OCRv6 ships detection + recognition only. Textline orientation and the
+    # document preprocessing models stay on the v5 artifacts (baidu guidance),
+    # so v6 needs a second directory alongside the v5 one.
+    ocr_version = get_ocr_version()
+    v6_dir = None
+    if ocr_version == 'v6':
+        v6_dir = get_v6_model_dir(deepx_path)
+        if not v6_dir.exists():
+            error_msg = (
+                f"OCR_VERSION=v6 requested but the v6 model directory was not found: {v6_dir}. "
+                f"Place det_v6_{{s,m}}_640.dxnn, rec_v6_{{s,m}}_240.dxnn and ppocrv6_dict.txt "
+                f"there (see deepx/setup.sh), or unset OCR_VERSION to use v5."
+            )
+            print(f"❌ {error_msg}")
+            raise HTTPException(status_code=503, detail=error_msg)
+
+    print(f"   OCR version: {ocr_version}")
     print(f"   Model type: {model_type}")
     print(f"   Model directory: {model_dir}")
-    
+    if v6_dir is not None:
+        print(f"   v6 model directory: {v6_dir} (size={get_v6_model_size()})")
+
     # Load models
-    def load_model(name):
-        path = model_dir / name
+    def load_model(name, base_dir=None):
+        path = (base_dir if base_dir is not None else model_dir) / name
         if not path.exists():
             error_msg = f"DEEPX NPU not available: NPU model file not found: {path}. Please download NPU models using local_deepx_setup.sh or build Docker with --deepx flag."
             print(f"❌ {error_msg}")
@@ -149,29 +206,89 @@ def load_npu_models_once():
             print(f"❌ {error_msg}")
             raise HTTPException(status_code=503, detail=error_msg)
     
-    # Detection models (640, 960)
-    det_prefix = 'det_mobile' if model_type == 'mobile' else 'det_v5'
-    det_models = {
-        640: load_model(f"{det_prefix}_640.dxnn"),
-        960: load_model(f"{det_prefix}_960.dxnn")
-    }
-    
-    # Classification model
+    if ocr_version == 'v6':
+        # v6 ships a single detection resolution (640) and a single recognition
+        # input shape (48x240). Both resolution keys and every ratio key map onto
+        # the same InferenceEngine so the existing routers keep working unchanged.
+        v6_size = get_v6_model_size()
+        det_v6 = load_model(f"det_v6_{v6_size}_640.dxnn", v6_dir)
+        det_models = {640: det_v6}
+        # The DEEPX-supplied v6 set (CSP-1527) also ships a 960 detection model.
+        # Use it when present; otherwise alias 960 onto the 640 engine and let
+        # DetectionNode resize to 640 for that key.
+        det_960_path = v6_dir / f"det_v6_{v6_size}_960.dxnn"
+        if det_960_path.exists():
+            det_models[960] = load_model(det_960_path.name, v6_dir)
+        else:
+            print(f"   det 960 model absent — routing 960 requests to the 640 engine")
+            det_models[960] = det_v6
+
+        # The v6 recognition graph is fully-convolutional over width, so it is
+        # compiled once per v5 ratio bucket (48x120 .. 48x1680). A 48x240-only
+        # deployment still works: every missing bucket falls back to the widest
+        # model that is present.
+        rec_bucket_width = {3: 120, 5: 240, 10: 480, 15: 720, 25: 1200, 35: 1680}
+        rec_models = {}
+        rec_fallback = None
+        for ratio, width in sorted(rec_bucket_width.items(), key=lambda kv: kv[1]):
+            # Two naming conventions are accepted: the DEEPX-supplied set uses
+            # rec_v6_<size>_ratio_<n>.dxnn (mirroring v5), locally compiled width
+            # variants use rec_v6_<size>_<width>.dxnn.
+            candidates = [v6_dir / f"rec_v6_{v6_size}_ratio_{ratio}.dxnn",
+                          v6_dir / f"rec_v6_{v6_size}_{width}.dxnn"]
+            found = next((c for c in candidates if c.exists()), None)
+            if found is not None:
+                rec_models[ratio] = load_model(found.name, v6_dir)
+                rec_fallback = rec_models[ratio]
+            elif rec_fallback is not None:
+                print(f"   rec bucket ratio={ratio} missing — "
+                      f"reusing the widest narrower model")
+                rec_models[ratio] = rec_fallback
+        # Buckets narrower than the narrowest available model are skipped by the
+        # ascending pass above (no fallback existed yet); back-fill them with the
+        # narrowest model so every rec_router output has an entry.
+        if rec_models:
+            narrowest = rec_models[min(rec_models)]
+            for ratio in rec_bucket_width:
+                if ratio not in rec_models:
+                    print(f"   rec bucket ratio={ratio} missing — "
+                          f"reusing the narrowest available model")
+                    rec_models[ratio] = narrowest
+
+        if not rec_models:
+            error_msg = (
+                f"No v6 recognition model found in {v6_dir}. Expected at least "
+                f"rec_v6_{v6_size}_ratio_5.dxnn or rec_v6_{v6_size}_240.dxnn."
+            )
+            print(f"❌ {error_msg}")
+            raise HTTPException(status_code=503, detail=error_msg)
+
+        dict_path = v6_dir / 'ppocrv6_dict.txt'
+    else:
+        # Detection models (640, 960)
+        det_prefix = 'det_mobile' if model_type == 'mobile' else 'det_v5'
+        det_models = {
+            640: load_model(f"{det_prefix}_640.dxnn"),
+            960: load_model(f"{det_prefix}_960.dxnn")
+        }
+
+        # Recognition models (ratio 3, 5, 10, 15, 25, 35)
+        rec_prefix = 'rec_mobile' if model_type == 'mobile' else 'rec_v5'
+        rec_models = {
+            ratio: load_model(f"{rec_prefix}_ratio_{ratio}.dxnn")
+            for ratio in [3, 5, 10, 15, 25, 35]
+        }
+
+        dict_path = model_dir / 'ppocrv5_dict.txt'
+
+    # Classification model (textline orientation) — v5 artifact in both versions
     cls_model = load_model("textline_ori.dxnn")
-    
-    # Recognition models (ratio 3, 5, 10, 15, 25, 35)
-    rec_prefix = 'rec_mobile' if model_type == 'mobile' else 'rec_v5'
-    rec_models = {
-        ratio: load_model(f"{rec_prefix}_ratio_{ratio}.dxnn")
-        for ratio in [3, 5, 10, 15, 25, 35]
-    }
-    
-    # Document preprocessing models
+
+    # Document preprocessing models — v5 artifacts in both versions
     doc_ori_model = load_model("doc_ori_fixed.dxnn")
     doc_unwarping_model = load_model("UVDoc_pruned_p3.dxnn")
-    
+
     # Dictionary
-    dict_path = model_dir / 'ppocrv5_dict.txt'
     if not dict_path.exists():
         error_msg = f"DEEPX NPU not available: Dictionary file not found: {dict_path}"
         print(f"❌ {error_msg}")
@@ -184,10 +301,12 @@ def load_npu_models_once():
         'doc_ori_model': doc_ori_model,
         'doc_unwarping_model': doc_unwarping_model,
         'dict_path': str(dict_path),
-        'model_type': model_type
+        'model_type': model_type,
+        'ocr_version': ocr_version,
+        'v6_model_size': get_v6_model_size() if ocr_version == 'v6' else None
     }
-    
-    print(f"✅ All NPU models loaded successfully ({model_type})")
+
+    print(f"✅ All NPU models loaded successfully ({ocr_version}/{model_type})")
     print(f"   Models will be reused for all requests")
     
     return _npu_models
@@ -346,7 +465,8 @@ def _create_npu_instance(
                 det_db_thresh=det_db_thresh,
                 det_db_box_thresh=det_db_box_thresh,
                 det_db_unclip_ratio=det_db_unclip_ratio,
-                rec_score_thresh=rec_score_thresh
+                rec_score_thresh=rec_score_thresh,
+                version=models.get('ocr_version', 'v5')
             )
             print(f"   ✅ DEEPX PaddleOcr (sync) created with pre-loaded models")
         else:
@@ -366,7 +486,8 @@ def _create_npu_instance(
                 det_db_unclip_ratio=det_db_unclip_ratio,
                 rec_score_thresh=rec_score_thresh,
                 input_interval=0.0,
-                verbose=False
+                verbose=False,
+                version=models.get('ocr_version', 'v5')
             )
             print(f"   ✅ DEEPX AsyncPipelineOCR (async) created with pre-loaded models")
         

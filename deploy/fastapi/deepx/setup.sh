@@ -11,6 +11,7 @@ BASE_URL="https://sdk.deepx.ai/"
 # default value
 SOURCE_PATH="res/assets/dx_baidu_PPOCR/server.tar.gz"
 MOBILE_SOURCE_PATH="res/assets/dx_baidu_PPOCR/mobile.tar.gz"
+V6_SOURCE_PATH="res/assets/dx_baidu_PPOCR/v6.tar.gz"
 OUTPUT_DIR="$SCRIPT_DIR/engine/model_files"
 SYMLINK_TARGET_PATH="$SCRIPT_DIR/.temp/"
 SYMLINK_ARGS="--symlink_target_path=$SYMLINK_TARGET_PATH"
@@ -69,6 +70,39 @@ main() {
         fi
     }
     cp -a $OUTPUT_DIR/server/*.txt $OUTPUT_DIR/
+
+    # --- PP-OCRv6 (optional) -------------------------------------------------
+    # v6 ships detection + recognition only; textline orientation and the
+    # document preprocessing models keep using the v5 artifacts above.
+    # The v6 payload is not on sdk.deepx.ai yet, so a download failure here is
+    # NOT fatal - it prints manual placement instructions instead.
+    GET_RES_CMD3="$SCRIPT_DIR/scripts/get_resource.sh --src_path=$V6_SOURCE_PATH --output=$OUTPUT_DIR/v6 $SYMLINK_ARGS $FORCE_ARGS --extract"
+    echo "Get Resources from remote server (PP-OCRv6, optional) ..."
+    echo "$GET_RES_CMD3"
+
+    if $GET_RES_CMD3; then
+        print_colored_v2 "INFO" "PP-OCRv6 models installed to $OUTPUT_DIR/v6"
+    else
+        cat <<'V6MSG'
+--------------------------------------------------------------------------
+[PP-OCRv6] Optional models were not downloaded (not published on sdk.deepx.ai yet).
+
+PP-OCRv5 is unaffected and remains the default (OCR_VERSION unset or v5).
+
+To enable v6, place these files in engine/model_files/v6/ manually:
+    det_v6_s_640.dxnn       det_v6_m_640.dxnn
+    rec_v6_{s,m}_120.dxnn   rec_v6_{s,m}_240.dxnn   rec_v6_{s,m}_480.dxnn
+    rec_v6_{s,m}_720.dxnn   rec_v6_{s,m}_1200.dxnn  rec_v6_{s,m}_1680.dxnn
+    ppocrv6_dict.txt        (= rec_char_dict_medium.txt, 18712 lines)
+
+Only rec_v6_<size>_240.dxnn is strictly required; any missing recognition
+bucket falls back to the widest model that is present (with reduced accuracy
+on long text lines).
+
+Then run with:  OCR_VERSION=v6 V6_MODEL_SIZE=m ./run.sh
+--------------------------------------------------------------------------
+V6MSG
+    fi
 }
 
 # parse args

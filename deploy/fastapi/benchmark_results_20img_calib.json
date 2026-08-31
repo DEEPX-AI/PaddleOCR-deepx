@@ -1,0 +1,395 @@
+[
+  {
+    "version": "v5",
+    "size": "-",
+    "images": 20,
+    "accuracy_pct": 88.47,
+    "fps": 1.19,
+    "ms_per_image": 836.9,
+    "avg_lines": 25.1,
+    "per_image": [
+      {
+        "image": "image_1.png",
+        "accuracy": 57.14,
+        "lines": 1,
+        "ms": 246.0
+      },
+      {
+        "image": "image_10.png",
+        "accuracy": 99.29,
+        "lines": 20,
+        "ms": 835.6
+      },
+      {
+        "image": "image_11.png",
+        "accuracy": 98.63,
+        "lines": 44,
+        "ms": 1860.7
+      },
+      {
+        "image": "image_12.png",
+        "accuracy": 70.51,
+        "lines": 50,
+        "ms": 1234.6
+      },
+      {
+        "image": "image_13.png",
+        "accuracy": 98.48,
+        "lines": 8,
+        "ms": 329.5
+      },
+      {
+        "image": "image_14.png",
+        "accuracy": 99.02,
+        "lines": 49,
+        "ms": 1149.5
+      },
+      {
+        "image": "image_15.png",
+        "accuracy": 99.35,
+        "lines": 81,
+        "ms": 2479.0
+      },
+      {
+        "image": "image_16.png",
+        "accuracy": 92.31,
+        "lines": 9,
+        "ms": 312.0
+      },
+      {
+        "image": "image_17.png",
+        "accuracy": 100.0,
+        "lines": 11,
+        "ms": 229.9
+      },
+      {
+        "image": "image_18.png",
+        "accuracy": 99.84,
+        "lines": 16,
+        "ms": 790.0
+      },
+      {
+        "image": "image_19.png",
+        "accuracy": 98.15,
+        "lines": 25,
+        "ms": 919.0
+      },
+      {
+        "image": "image_2.png",
+        "accuracy": 61.82,
+        "lines": 6,
+        "ms": 295.3
+      },
+      {
+        "image": "image_20.png",
+        "accuracy": 97.92,
+        "lines": 23,
+        "ms": 854.2
+      },
+      {
+        "image": "image_3.png",
+        "accuracy": 53.33,
+        "lines": 7,
+        "ms": 275.2
+      },
+      {
+        "image": "image_4.png",
+        "accuracy": 71.93,
+        "lines": 7,
+        "ms": 298.0
+      },
+      {
+        "image": "image_5.png",
+        "accuracy": 95.24,
+        "lines": 3,
+        "ms": 254.4
+      },
+      {
+        "image": "image_6.png",
+        "accuracy": 98.2,
+        "lines": 46,
+        "ms": 1781.9
+      },
+      {
+        "image": "image_7.png",
+        "accuracy": 88.37,
+        "lines": 19,
+        "ms": 502.1
+      },
+      {
+        "image": "image_8.png",
+        "accuracy": 94.17,
+        "lines": 34,
+        "ms": 784.5
+      },
+      {
+        "image": "image_9.png",
+        "accuracy": 95.73,
+        "lines": 43,
+        "ms": 1307.1
+      }
+    ]
+  },
+  {
+    "version": "v6",
+    "size": "s",
+    "images": 20,
+    "accuracy_pct": 63.64,
+    "fps": 2.8,
+    "ms_per_image": 357.5,
+    "avg_lines": 23.1,
+    "per_image": [
+      {
+        "image": "image_1.png",
+        "accuracy": 57.14,
+        "lines": 1,
+        "ms": 64.8
+      },
+      {
+        "image": "image_10.png",
+        "accuracy": 32.3,
+        "lines": 19,
+        "ms": 425.1
+      },
+      {
+        "image": "image_11.png",
+        "accuracy": 68.88,
+        "lines": 44,
+        "ms": 728.6
+      },
+      {
+        "image": "image_12.png",
+        "accuracy": 23.46,
+        "lines": 21,
+        "ms": 228.1
+      },
+      {
+        "image": "image_13.png",
+        "accuracy": 100.0,
+        "lines": 8,
+        "ms": 101.5
+      },
+      {
+        "image": "image_14.png",
+        "accuracy": 33.01,
+        "lines": 49,
+        "ms": 606.4
+      },
+      {
+        "image": "image_15.png",
+        "accuracy": 96.94,
+        "lines": 80,
+        "ms": 1203.0
+      },
+      {
+        "image": "image_16.png",
+        "accuracy": 88.46,
+        "lines": 9,
+        "ms": 98.8
+      },
+      {
+        "image": "image_17.png",
+        "accuracy": 90.8,
+        "lines": 12,
+        "ms": 121.5
+      },
+      {
+        "image": "image_18.png",
+        "accuracy": 12.72,
+        "lines": 14,
+        "ms": 519.0
+      },
+      {
+        "image": "image_19.png",
+        "accuracy": 93.61,
+        "lines": 25,
+        "ms": 425.9
+      },
+      {
+        "image": "image_2.png",
+        "accuracy": 56.36,
+        "lines": 6,
+        "ms": 77.8
+      },
+      {
+        "image": "image_20.png",
+        "accuracy": 80.34,
+        "lines": 20,
+        "ms": 360.5
+      },
+      {
+        "image": "image_3.png",
+        "accuracy": 53.33,
+        "lines": 7,
+        "ms": 81.0
+      },
+      {
+        "image": "image_4.png",
+        "accuracy": 78.95,
+        "lines": 6,
+        "ms": 81.4
+      },
+      {
+        "image": "image_5.png",
+        "accuracy": 85.71,
+        "lines": 4,
+        "ms": 65.4
+      },
+      {
+        "image": "image_6.png",
+        "accuracy": 18.41,
+        "lines": 45,
+        "ms": 806.3
+      },
+      {
+        "image": "image_7.png",
+        "accuracy": 81.44,
+        "lines": 18,
+        "ms": 239.5
+      },
+      {
+        "image": "image_8.png",
+        "accuracy": 90.36,
+        "lines": 35,
+        "ms": 321.1
+      },
+      {
+        "image": "image_9.png",
+        "accuracy": 30.49,
+        "lines": 40,
+        "ms": 593.6
+      }
+    ]
+  },
+  {
+    "version": "v6",
+    "size": "m",
+    "images": 20,
+    "accuracy_pct": 88.73,
+    "fps": 1.61,
+    "ms_per_image": 620.9,
+    "avg_lines": 24.0,
+    "per_image": [
+      {
+        "image": "image_1.png",
+        "accuracy": 57.14,
+        "lines": 1,
+        "ms": 153.1
+      },
+      {
+        "image": "image_10.png",
+        "accuracy": 100.0,
+        "lines": 19,
+        "ms": 643.5
+      },
+      {
+        "image": "image_11.png",
+        "accuracy": 98.52,
+        "lines": 43,
+        "ms": 1310.3
+      },
+      {
+        "image": "image_12.png",
+        "accuracy": 64.74,
+        "lines": 41,
+        "ms": 663.3
+      },
+      {
+        "image": "image_13.png",
+        "accuracy": 100.0,
+        "lines": 8,
+        "ms": 203.2
+      },
+      {
+        "image": "image_14.png",
+        "accuracy": 98.6,
+        "lines": 48,
+        "ms": 911.4
+      },
+      {
+        "image": "image_15.png",
+        "accuracy": 99.09,
+        "lines": 81,
+        "ms": 1936.8
+      },
+      {
+        "image": "image_16.png",
+        "accuracy": 92.31,
+        "lines": 9,
+        "ms": 188.6
+      },
+      {
+        "image": "image_17.png",
+        "accuracy": 100.0,
+        "lines": 13,
+        "ms": 235.0
+      },
+      {
+        "image": "image_18.png",
+        "accuracy": 98.09,
+        "lines": 14,
+        "ms": 833.2
+      },
+      {
+        "image": "image_19.png",
+        "accuracy": 97.59,
+        "lines": 25,
+        "ms": 682.1
+      },
+      {
+        "image": "image_2.png",
+        "accuracy": 69.09,
+        "lines": 7,
+        "ms": 181.6
+      },
+      {
+        "image": "image_20.png",
+        "accuracy": 98.3,
+        "lines": 20,
+        "ms": 602.3
+      },
+      {
+        "image": "image_3.png",
+        "accuracy": 60.0,
+        "lines": 5,
+        "ms": 155.2
+      },
+      {
+        "image": "image_4.png",
+        "accuracy": 78.95,
+        "lines": 6,
+        "ms": 174.9
+      },
+      {
+        "image": "image_5.png",
+        "accuracy": 95.24,
+        "lines": 3,
+        "ms": 145.0
+      },
+      {
+        "image": "image_6.png",
+        "accuracy": 92.49,
+        "lines": 45,
+        "ms": 1544.6
+      },
+      {
+        "image": "image_7.png",
+        "accuracy": 90.03,
+        "lines": 17,
+        "ms": 404.1
+      },
+      {
+        "image": "image_8.png",
+        "accuracy": 93.95,
+        "lines": 34,
+        "ms": 510.4
+      },
+      {
+        "image": "image_9.png",
+        "accuracy": 90.51,
+        "lines": 41,
+        "ms": 939.6
+      }
+    ]
+  }
+]

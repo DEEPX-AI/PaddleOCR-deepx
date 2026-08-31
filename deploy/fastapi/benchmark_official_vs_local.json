@@ -1,0 +1,667 @@
+[
+  {
+    "version": "v5",
+    "size": "-",
+    "model_dir": "(default v6)",
+    "images": 20,
+    "accuracy_pct": 88.47,
+    "fps": 1.19,
+    "ms_per_image": 839.9,
+    "avg_lines": 25.1,
+    "per_image": [
+      {
+        "image": "image_1.png",
+        "accuracy": 57.14,
+        "lines": 1,
+        "ms": 248.4
+      },
+      {
+        "image": "image_10.png",
+        "accuracy": 99.29,
+        "lines": 20,
+        "ms": 879.5
+      },
+      {
+        "image": "image_11.png",
+        "accuracy": 98.63,
+        "lines": 44,
+        "ms": 1873.7
+      },
+      {
+        "image": "image_12.png",
+        "accuracy": 70.51,
+        "lines": 50,
+        "ms": 1242.8
+      },
+      {
+        "image": "image_13.png",
+        "accuracy": 98.48,
+        "lines": 8,
+        "ms": 315.2
+      },
+      {
+        "image": "image_14.png",
+        "accuracy": 99.02,
+        "lines": 49,
+        "ms": 1161.5
+      },
+      {
+        "image": "image_15.png",
+        "accuracy": 99.35,
+        "lines": 81,
+        "ms": 2490.1
+      },
+      {
+        "image": "image_16.png",
+        "accuracy": 92.31,
+        "lines": 9,
+        "ms": 314.8
+      },
+      {
+        "image": "image_17.png",
+        "accuracy": 100.0,
+        "lines": 11,
+        "ms": 240.7
+      },
+      {
+        "image": "image_18.png",
+        "accuracy": 99.84,
+        "lines": 16,
+        "ms": 800.6
+      },
+      {
+        "image": "image_19.png",
+        "accuracy": 98.15,
+        "lines": 25,
+        "ms": 913.2
+      },
+      {
+        "image": "image_2.png",
+        "accuracy": 61.82,
+        "lines": 6,
+        "ms": 298.5
+      },
+      {
+        "image": "image_20.png",
+        "accuracy": 97.92,
+        "lines": 23,
+        "ms": 856.8
+      },
+      {
+        "image": "image_3.png",
+        "accuracy": 53.33,
+        "lines": 7,
+        "ms": 276.4
+      },
+      {
+        "image": "image_4.png",
+        "accuracy": 71.93,
+        "lines": 7,
+        "ms": 297.9
+      },
+      {
+        "image": "image_5.png",
+        "accuracy": 95.24,
+        "lines": 3,
+        "ms": 253.8
+      },
+      {
+        "image": "image_6.png",
+        "accuracy": 98.2,
+        "lines": 46,
+        "ms": 1796.8
+      },
+      {
+        "image": "image_7.png",
+        "accuracy": 88.37,
+        "lines": 19,
+        "ms": 517.6
+      },
+      {
+        "image": "image_8.png",
+        "accuracy": 94.17,
+        "lines": 34,
+        "ms": 742.9
+      },
+      {
+        "image": "image_9.png",
+        "accuracy": 95.73,
+        "lines": 43,
+        "ms": 1276.6
+      }
+    ],
+    "label": "v5 server (baseline)"
+  },
+  {
+    "version": "v6",
+    "size": "s",
+    "model_dir": "(default v6)",
+    "images": 20,
+    "accuracy_pct": 64.12,
+    "fps": 2.71,
+    "ms_per_image": 369.0,
+    "avg_lines": 23.0,
+    "per_image": [
+      {
+        "image": "image_1.png",
+        "accuracy": 57.14,
+        "lines": 1,
+        "ms": 66.7
+      },
+      {
+        "image": "image_10.png",
+        "accuracy": 28.98,
+        "lines": 19,
+        "ms": 427.4
+      },
+      {
+        "image": "image_11.png",
+        "accuracy": 68.88,
+        "lines": 43,
+        "ms": 791.1
+      },
+      {
+        "image": "image_12.png",
+        "accuracy": 29.75,
+        "lines": 25,
+        "ms": 248.1
+      },
+      {
+        "image": "image_13.png",
+        "accuracy": 100.0,
+        "lines": 8,
+        "ms": 102.6
+      },
+      {
+        "image": "image_14.png",
+        "accuracy": 32.72,
+        "lines": 48,
+        "ms": 637.1
+      },
+      {
+        "image": "image_15.png",
+        "accuracy": 96.74,
+        "lines": 81,
+        "ms": 1232.0
+      },
+      {
+        "image": "image_16.png",
+        "accuracy": 90.38,
+        "lines": 9,
+        "ms": 102.3
+      },
+      {
+        "image": "image_17.png",
+        "accuracy": 89.66,
+        "lines": 12,
+        "ms": 129.7
+      },
+      {
+        "image": "image_18.png",
+        "accuracy": 13.51,
+        "lines": 14,
+        "ms": 535.4
+      },
+      {
+        "image": "image_19.png",
+        "accuracy": 92.9,
+        "lines": 25,
+        "ms": 427.9
+      },
+      {
+        "image": "image_2.png",
+        "accuracy": 58.18,
+        "lines": 6,
+        "ms": 88.2
+      },
+      {
+        "image": "image_20.png",
+        "accuracy": 75.05,
+        "lines": 20,
+        "ms": 402.5
+      },
+      {
+        "image": "image_3.png",
+        "accuracy": 60.0,
+        "lines": 5,
+        "ms": 77.0
+      },
+      {
+        "image": "image_4.png",
+        "accuracy": 78.95,
+        "lines": 6,
+        "ms": 80.7
+      },
+      {
+        "image": "image_5.png",
+        "accuracy": 90.48,
+        "lines": 4,
+        "ms": 61.7
+      },
+      {
+        "image": "image_6.png",
+        "accuracy": 18.56,
+        "lines": 43,
+        "ms": 838.2
+      },
+      {
+        "image": "image_7.png",
+        "accuracy": 83.66,
+        "lines": 18,
+        "ms": 264.2
+      },
+      {
+        "image": "image_8.png",
+        "accuracy": 85.2,
+        "lines": 33,
+        "ms": 277.0
+      },
+      {
+        "image": "image_9.png",
+        "accuracy": 31.67,
+        "lines": 40,
+        "ms": 590.6
+      }
+    ],
+    "label": "v6/s  locally compiled"
+  },
+  {
+    "version": "v6",
+    "size": "m",
+    "model_dir": "(default v6)",
+    "images": 20,
+    "accuracy_pct": 87.63,
+    "fps": 1.65,
+    "ms_per_image": 605.1,
+    "avg_lines": 24.4,
+    "per_image": [
+      {
+        "image": "image_1.png",
+        "accuracy": 57.14,
+        "lines": 1,
+        "ms": 144.9
+      },
+      {
+        "image": "image_10.png",
+        "accuracy": 100.0,
+        "lines": 19,
+        "ms": 655.1
+      },
+      {
+        "image": "image_11.png",
+        "accuracy": 98.42,
+        "lines": 43,
+        "ms": 1338.3
+      },
+      {
+        "image": "image_12.png",
+        "accuracy": 60.68,
+        "lines": 47,
+        "ms": 681.7
+      },
+      {
+        "image": "image_13.png",
+        "accuracy": 100.0,
+        "lines": 8,
+        "ms": 196.8
+      },
+      {
+        "image": "image_14.png",
+        "accuracy": 99.02,
+        "lines": 48,
+        "ms": 889.3
+      },
+      {
+        "image": "image_15.png",
+        "accuracy": 99.09,
+        "lines": 81,
+        "ms": 1852.2
+      },
+      {
+        "image": "image_16.png",
+        "accuracy": 92.31,
+        "lines": 9,
+        "ms": 183.4
+      },
+      {
+        "image": "image_17.png",
+        "accuracy": 98.85,
+        "lines": 13,
+        "ms": 231.6
+      },
+      {
+        "image": "image_18.png",
+        "accuracy": 98.41,
+        "lines": 14,
+        "ms": 839.0
+      },
+      {
+        "image": "image_19.png",
+        "accuracy": 97.44,
+        "lines": 25,
+        "ms": 630.5
+      },
+      {
+        "image": "image_2.png",
+        "accuracy": 63.64,
+        "lines": 7,
+        "ms": 177.5
+      },
+      {
+        "image": "image_20.png",
+        "accuracy": 96.03,
+        "lines": 22,
+        "ms": 642.9
+      },
+      {
+        "image": "image_3.png",
+        "accuracy": 53.33,
+        "lines": 3,
+        "ms": 148.0
+      },
+      {
+        "image": "image_4.png",
+        "accuracy": 78.95,
+        "lines": 6,
+        "ms": 173.8
+      },
+      {
+        "image": "image_5.png",
+        "accuracy": 90.48,
+        "lines": 4,
+        "ms": 150.9
+      },
+      {
+        "image": "image_6.png",
+        "accuracy": 93.69,
+        "lines": 44,
+        "ms": 1233.3
+      },
+      {
+        "image": "image_7.png",
+        "accuracy": 87.81,
+        "lines": 18,
+        "ms": 432.0
+      },
+      {
+        "image": "image_8.png",
+        "accuracy": 92.83,
+        "lines": 35,
+        "ms": 536.5
+      },
+      {
+        "image": "image_9.png",
+        "accuracy": 94.54,
+        "lines": 42,
+        "ms": 964.4
+      }
+    ],
+    "label": "v6/m  locally compiled"
+  },
+  {
+    "version": "v6",
+    "size": "s",
+    "model_dir": "/data/home/dhyang/CSP/dx-all-suite/DXM1-521/PaddleOCR-deepx/deploy/fastapi/deepx/engine/model_files/v6_official",
+    "images": 20,
+    "accuracy_pct": 85.27,
+    "fps": 2.42,
+    "ms_per_image": 413.7,
+    "avg_lines": 24.6,
+    "per_image": [
+      {
+        "image": "image_1.png",
+        "accuracy": 57.14,
+        "lines": 1,
+        "ms": 128.2
+      },
+      {
+        "image": "image_10.png",
+        "accuracy": 98.81,
+        "lines": 19,
+        "ms": 328.4
+      },
+      {
+        "image": "image_11.png",
+        "accuracy": 98.21,
+        "lines": 44,
+        "ms": 685.2
+      },
+      {
+        "image": "image_12.png",
+        "accuracy": 73.79,
+        "lines": 50,
+        "ms": 534.5
+      },
+      {
+        "image": "image_13.png",
+        "accuracy": 96.97,
+        "lines": 8,
+        "ms": 143.7
+      },
+      {
+        "image": "image_14.png",
+        "accuracy": 96.91,
+        "lines": 49,
+        "ms": 626.4
+      },
+      {
+        "image": "image_15.png",
+        "accuracy": 99.15,
+        "lines": 81,
+        "ms": 1277.8
+      },
+      {
+        "image": "image_16.png",
+        "accuracy": 88.46,
+        "lines": 9,
+        "ms": 141.0
+      },
+      {
+        "image": "image_17.png",
+        "accuracy": 81.61,
+        "lines": 12,
+        "ms": 130.3
+      },
+      {
+        "image": "image_18.png",
+        "accuracy": 98.89,
+        "lines": 14,
+        "ms": 618.2
+      },
+      {
+        "image": "image_19.png",
+        "accuracy": 91.76,
+        "lines": 24,
+        "ms": 452.2
+      },
+      {
+        "image": "image_2.png",
+        "accuracy": 50.91,
+        "lines": 8,
+        "ms": 134.0
+      },
+      {
+        "image": "image_20.png",
+        "accuracy": 97.73,
+        "lines": 20,
+        "ms": 377.5
+      },
+      {
+        "image": "image_3.png",
+        "accuracy": 53.33,
+        "lines": 6,
+        "ms": 124.9
+      },
+      {
+        "image": "image_4.png",
+        "accuracy": 68.42,
+        "lines": 6,
+        "ms": 129.4
+      },
+      {
+        "image": "image_5.png",
+        "accuracy": 95.24,
+        "lines": 3,
+        "ms": 119.4
+      },
+      {
+        "image": "image_6.png",
+        "accuracy": 95.34,
+        "lines": 46,
+        "ms": 1029.2
+      },
+      {
+        "image": "image_7.png",
+        "accuracy": 83.66,
+        "lines": 18,
+        "ms": 248.4
+      },
+      {
+        "image": "image_8.png",
+        "accuracy": 85.65,
+        "lines": 33,
+        "ms": 360.2
+      },
+      {
+        "image": "image_9.png",
+        "accuracy": 93.48,
+        "lines": 42,
+        "ms": 685.6
+      }
+    ],
+    "label": "v6/s  CSP-1527 official"
+  },
+  {
+    "version": "v6",
+    "size": "m",
+    "model_dir": "/data/home/dhyang/CSP/dx-all-suite/DXM1-521/PaddleOCR-deepx/deploy/fastapi/deepx/engine/model_files/v6_official",
+    "images": 20,
+    "accuracy_pct": 86.47,
+    "fps": 1.34,
+    "ms_per_image": 744.2,
+    "avg_lines": 24.9,
+    "per_image": [
+      {
+        "image": "image_1.png",
+        "accuracy": 78.57,
+        "lines": 2,
+        "ms": 335.0
+      },
+      {
+        "image": "image_10.png",
+        "accuracy": 97.86,
+        "lines": 19,
+        "ms": 508.5
+      },
+      {
+        "image": "image_11.png",
+        "accuracy": 98.42,
+        "lines": 44,
+        "ms": 1183.7
+      },
+      {
+        "image": "image_12.png",
+        "accuracy": 70.77,
+        "lines": 51,
+        "ms": 962.3
+      },
+      {
+        "image": "image_13.png",
+        "accuracy": 83.33,
+        "lines": 8,
+        "ms": 352.7
+      },
+      {
+        "image": "image_14.png",
+        "accuracy": 97.75,
+        "lines": 52,
+        "ms": 1072.7
+      },
+      {
+        "image": "image_15.png",
+        "accuracy": 99.22,
+        "lines": 81,
+        "ms": 2009.9
+      },
+      {
+        "image": "image_16.png",
+        "accuracy": 92.31,
+        "lines": 9,
+        "ms": 354.8
+      },
+      {
+        "image": "image_17.png",
+        "accuracy": 72.41,
+        "lines": 12,
+        "ms": 242.1
+      },
+      {
+        "image": "image_18.png",
+        "accuracy": 98.41,
+        "lines": 14,
+        "ms": 1033.1
+      },
+      {
+        "image": "image_19.png",
+        "accuracy": 97.16,
+        "lines": 25,
+        "ms": 826.1
+      },
+      {
+        "image": "image_2.png",
+        "accuracy": 58.18,
+        "lines": 7,
+        "ms": 346.3
+      },
+      {
+        "image": "image_20.png",
+        "accuracy": 98.11,
+        "lines": 20,
+        "ms": 712.4
+      },
+      {
+        "image": "image_3.png",
+        "accuracy": 60.0,
+        "lines": 3,
+        "ms": 320.8
+      },
+      {
+        "image": "image_4.png",
+        "accuracy": 68.42,
+        "lines": 7,
+        "ms": 352.1
+      },
+      {
+        "image": "image_5.png",
+        "accuracy": 95.24,
+        "lines": 4,
+        "ms": 315.2
+      },
+      {
+        "image": "image_6.png",
+        "accuracy": 95.57,
+        "lines": 46,
+        "ms": 1684.2
+      },
+      {
+        "image": "image_7.png",
+        "accuracy": 87.53,
+        "lines": 18,
+        "ms": 421.3
+      },
+      {
+        "image": "image_8.png",
+        "accuracy": 86.1,
+        "lines": 33,
+        "ms": 630.1
+      },
+      {
+        "image": "image_9.png",
+        "accuracy": 93.95,
+        "lines": 43,
+        "ms": 1221.5
+      }
+    ],
+    "label": "v6/m  CSP-1527 official"
+  }
+]

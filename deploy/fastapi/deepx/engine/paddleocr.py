@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import math
 import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -57,22 +58,46 @@ class DetectionNode(Node):
     - Automatic model selection based on image size
     - DBNet-based text detection
     """
-    def __init__(self, models:dict, det_db_thresh: float = 0.3, det_db_box_thresh: float = 0.6, det_db_unclip_ratio: float = 1.5):
+    def __init__(self, models:dict, det_db_thresh: float = 0.3, det_db_box_thresh: float = 0.6, det_db_unclip_ratio: float = 1.5,
+                 version: str = 'v5'):
         """
         Args:
             models: {resolution: IE_model} dictionary (e.g., {640: model_640, 960: model_960})
             det_db_thresh: Detection threshold
             det_db_box_thresh: Detection box threshold
             det_db_unclip_ratio: Detection unclip ratio
+            version: 'v5' (per-resolution models) or 'v6' (single 640 model)
         """
         super().__init__()
         self.det_model_map: dict = models
+        self.version = version
 
         self.det_preprocess_map = {}
-        for res in [640, 960]:
-            res_det_preprocess = det_preprocess.copy()
-            res_det_preprocess[0]['resize']['size'] = [res, res]
-            self.det_preprocess_map[res] = PreProcessingCompose(res_det_preprocess)
+        if version == 'v6':
+            # Preprocess to whatever shape EACH engine actually accepts, read from
+            # the engine itself. det_router returns 960 for large inputs, so if a
+            # deployment only has the 640 model (both keys aliased to it) the 960
+            # key must still resize to 640 - handing a 960x960 buffer to a 640x640
+            # engine is accepted silently by dx_engine and collapses detection.
+            # When a real 960 model is present each key gets its own shape.
+            self.det_input_shapes = {}
+            for res in [640, 960]:
+                model = models.get(res)
+                if model is None:
+                    continue
+                det_h, det_w = self._probe_det_input_shape({res: model})
+                self.det_input_shapes[res] = (det_h, det_w)
+                res_det_preprocess = det_preprocess.copy()
+                res_det_preprocess[0]['resize']['size'] = [det_h, det_w]
+                self.det_preprocess_map[res] = PreProcessingCompose(res_det_preprocess)
+            self.det_input_hw = (max(self.det_input_shapes.values(), key=lambda hw: hw[1])
+                                 if self.det_input_shapes else (640, 640))
+        else:
+            self.det_input_hw = None
+            for res in [640, 960]:
+                res_det_preprocess = det_preprocess.copy()
+                res_det_preprocess[0]['resize']['size'] = [res, res]
+                self.det_preprocess_map[res] = PreProcessingCompose(res_det_preprocess)
 
         self.det_postprocess = DetPostProcess(
             thresh=det_db_thresh,
@@ -87,6 +112,22 @@ class DetectionNode(Node):
         self.router = det_router
         self.counter = 0
     
+    @staticmethod
+    def _probe_det_input_shape(models, default=(640, 640)):
+        """
+        Read the detection input (height, width) from the engine.
+
+        dx_engine reports NHWC shapes, e.g. [1, 640, 640, 3].
+        """
+        for model in models.values():
+            try:
+                shape = list(model.get_input_tensors_info()[0]['shape'])
+            except Exception:
+                continue
+            if len(shape) == 4 and shape[3] in (1, 3, 4):
+                return int(shape[1]), int(shape[2])
+        return default
+
     def __call__(self, img):
         """
         Perform text region detection on image
@@ -205,6 +246,48 @@ class ClassificationNode(Node):
         self.debug_counter += 1
 
 
+def split_crop_for_recognition(crop, target_ratio, overlap_ratio=0.1):
+    """
+    Split a wide text crop into overlapping tiles of roughly target_ratio (W/H).
+
+    PP-OCRv5 covers long text lines with per-ratio models up to 48x1680. PP-OCRv6
+    ships a single 48x240 recognition model (W/H = 5) whose output is 30 CTC
+    timesteps, so squeezing a very wide line into it silently truncates the text.
+    Cutting the crop into overlapping tiles keeps each tile near the ratio the
+    model was trained on; the per-tile strings are stitched back together by
+    merge_recognition_results().
+
+    Args:
+        crop: HWC text crop image
+        target_ratio: model input W/H (e.g. 240/48 = 5.0)
+        overlap_ratio: fraction of a tile width repeated into the next tile
+
+    Returns:
+        List of crops. A crop that already fits returns as a single-element list.
+    """
+    h, w = crop.shape[:2]
+    if h <= 0 or w <= 0 or target_ratio <= 0:
+        return [crop]
+
+    ratio = w / h
+    if ratio <= target_ratio * 1.3:
+        return [crop]
+
+    num_splits = math.ceil(ratio / target_ratio)
+    step = w / num_splits
+    overlap = step * overlap_ratio
+
+    tiles = []
+    for i in range(num_splits):
+        x0 = int(max(0, round(step * i)))
+        x1 = int(min(w, round(step * (i + 1) + overlap)))
+        if x1 - x0 < 2:
+            continue
+        tiles.append(crop[:, x0:x1])
+
+    return tiles if tiles else [crop]
+
+
 class RecognitionNode(Node):
     """
     Text Recognition Node (PP-OCRv5 Recognition)
@@ -212,30 +295,73 @@ class RecognitionNode(Node):
     - Automatic model selection by ratio: ratio_3, ratio_5, ratio_10, ratio_15, ratio_25, ratio_35
     - CRNN-based text recognition
     """
-    def __init__(self, models:dict, dict_dir:str, rec_score_thresh: float = 0.0):
+    def __init__(self, models:dict, dict_dir:str, rec_score_thresh: float = 0.0,
+                 version: str = 'v5'):
         """
         Args:
             models: {ratio_key: IE_model} dictionary
             rec_score_thresh: Recognition score threshold for filtering results
+            version: 'v5' (per-ratio models) or 'v6' (single fixed input shape)
         """
         super().__init__()
         self.rec_model_map: dict = models
-        
+        self.version = version
+
         self.rec_preprocess_map = {}
 
-        ratio_rec_preprocess = rec_preprocess.copy()
-        ratio_rec_preprocess[0]['resize']['size'] = [48, 120]
-        self.rec_preprocess_map[3] = PreProcessingCompose(ratio_rec_preprocess)
-        for i in [5, 10, 15, 25, 35]:
-            ratio_rec_preprocess[0]['resize']['size'] = [48, 48 * i]
-            self.rec_preprocess_map[i] = PreProcessingCompose(ratio_rec_preprocess)
+        if version == 'v6':
+            # Each ratio bucket may have its own engine (built by widening the
+            # 48x240 graph, which is fully-convolutional over width: 240->30,
+            # 480->60, 720->90 CTC timesteps). Read every engine's own input
+            # shape instead of hardcoding, so a bucket that is missing and
+            # aliased to another model still gets that model's real shape.
+            self.rec_input_shapes = {}
+            for i in [3, 5, 10, 15, 25, 35]:
+                model = models.get(i)
+                if model is None:
+                    continue
+                rec_h, rec_w = self._probe_rec_input_shape({i: model})
+                self.rec_input_shapes[i] = (rec_h, rec_w)
+                bucket_preprocess = rec_preprocess.copy()
+                bucket_preprocess[0]['resize']['size'] = [rec_h, rec_w]
+                self.rec_preprocess_map[i] = PreProcessingCompose(bucket_preprocess)
+            # Widest available bucket is the fallback shape.
+            if self.rec_input_shapes:
+                self.rec_input_hw = max(self.rec_input_shapes.values(), key=lambda hw: hw[1])
+            else:
+                self.rec_input_hw = (48, 240)
+        else:
+            self.rec_input_hw = None
+            ratio_rec_preprocess = rec_preprocess.copy()
+            ratio_rec_preprocess[0]['resize']['size'] = [48, 120]
+            self.rec_preprocess_map[3] = PreProcessingCompose(ratio_rec_preprocess)
+            for i in [5, 10, 15, 25, 35]:
+                ratio_rec_preprocess[0]['resize']['size'] = [48, 48 * i]
+                self.rec_preprocess_map[i] = PreProcessingCompose(ratio_rec_preprocess)
         character_dict_path = dict_dir
-        
+
         self.rec_postprocess = RecLabelDecode(character_dict_path=character_dict_path, use_space_char=True)
         self.router = rec_router
         self.overlap_ratio = 0.1
         self.drop = rec_score_thresh
         self.debug_counter = 0
+
+    @staticmethod
+    def _probe_rec_input_shape(models, default=(48, 240)):
+        """
+        Read the recognition input (height, width) from the engine.
+
+        dx_engine reports NHWC shapes, e.g. [1, 48, 240, 3]. Falling back to the
+        default keeps model loading working if a runtime stops exposing the info.
+        """
+        for model in models.values():
+            try:
+                shape = list(model.get_input_tensors_info()[0]['shape'])
+            except Exception:
+                continue
+            if len(shape) == 4 and shape[3] in (1, 3, 4):
+                return int(shape[1]), int(shape[2])
+        return default
 
     def split_bbox_for_recognition(self, bbox, rec_image_shape, overlap_ratio=0.1):
         return split_bbox_for_recognition(bbox, rec_image_shape, overlap_ratio)
@@ -276,19 +402,37 @@ class RecognitionNode(Node):
             ratio_preprocess = self.rec_preprocess_map[mapped_ratio]
             ratio_model = self.rec_model_map[mapped_ratio]
 
-            inp = ratio_preprocess(cropped_img)
-            rec_input = self.prepare_input(inp)
+            # v5 routes wide crops to a wider model; v6 has a single input shape,
+            # so a wide crop is split into overlapping tiles instead.
+            if self.version == 'v6':
+                bucket_hw = getattr(self, 'rec_input_shapes', {}).get(
+                    mapped_ratio, self.rec_input_hw)
+                target_ratio = bucket_hw[1] / bucket_hw[0]
+                tiles = split_crop_for_recognition(cropped_img, target_ratio, self.overlap_ratio)
+            else:
+                tiles = [cropped_img]
 
-            start_time = time.time()
-            output = ratio_model.run([rec_input])
-            end_time = time.time()
+            tile_results = []
+            for tile in tiles:
+                inp = ratio_preprocess(tile)
+                rec_input = self.prepare_input(inp)
 
-            if min_latency > end_time - start_time:
-                min_latency = end_time - start_time
-            res = self.rec_postprocess(output[0])[0]
-            engine_latency += end_time - start_time
+                start_time = time.time()
+                output = ratio_model.run([rec_input])
+                end_time = time.time()
+
+                if min_latency > end_time - start_time:
+                    min_latency = end_time - start_time
+                engine_latency += end_time - start_time
+                tile_results.append(self.rec_postprocess(output[0])[0])
+
+            if len(tile_results) == 1:
+                res = tile_results[0]
+            else:
+                res = self.merge_recognition_results(tile_results, self.overlap_ratio)
+
             self.debug_counter += 1
-            
+
             if res[1] > self.drop:
                 outputs.append({
                     'bbox_index': i,
@@ -510,9 +654,10 @@ class PaddleOcr():
                  det_db_thresh: float = 0.3,
                  det_db_box_thresh: float = 0.6,
                  det_db_unclip_ratio: float = 1.5,
-                 rec_score_thresh: float = 0.0):
+                 rec_score_thresh: float = 0.0,
+                 version: str = 'v5'):
         '''
-        @brief: PP-OCRv5 style OCR engine (including Document Preprocessing)
+        @brief: PP-OCRv5 / PP-OCRv6 style OCR engine (including Document Preprocessing)
         @param:
             det_model: DeepX detection model (single IE or dict of {resolution: IE})
             cls_model: DeepX classification model (cls.dxnn) - textline orientation
@@ -550,13 +695,15 @@ class PaddleOcr():
             self.det_models,
             det_db_thresh=det_db_thresh,
             det_db_box_thresh=det_db_box_thresh,
-            det_db_unclip_ratio=det_db_unclip_ratio
+            det_db_unclip_ratio=det_db_unclip_ratio,
+            version=version
         )
         self.classification_node = ClassificationNode(self.cls_model)
         self.recognition_node = RecognitionNode(
             self.rec_models,
             dict_dir=rec_dict_dir,
-            rec_score_thresh=rec_score_thresh
+            rec_score_thresh=rec_score_thresh,
+            version=version
         )
                                               
         # Document Preprocessing pipeline (PP-OCRv5 architecture: det + rec + doc_ori + UVDoc)
@@ -780,7 +927,11 @@ class OCRJob:
         self.det_input_buffer: Optional[np.ndarray] = None
         self.det_padding_info = None
         self.cls_input_buffers: Dict[int, np.ndarray] = {}  # crop_idx -> preprocessed input
-        self.rec_input_buffers: Dict[int, np.ndarray] = {}  # crop_idx -> preprocessed input
+        self.rec_input_buffers: Dict[Any, np.ndarray] = {}  # (crop_idx, tile_idx) -> preprocessed input
+        # v6 splits a wide crop into tiles; each tile is a separate async run and
+        # the per-crop text is merged once every tile of that crop has returned.
+        self.rec_tile_expected: Dict[int, int] = {}   # crop_idx -> number of tiles
+        self.rec_tile_results: Dict[int, Dict[int, Any]] = {}  # crop_idx -> {tile_idx: (text, score)}
         self.doc_ori_input_buffer: Optional[np.ndarray] = None
         self.doc_uv_input_buffer: Optional[np.ndarray] = None
         self.debug_output_dir: Optional[str] = None
@@ -818,7 +969,8 @@ class AsyncPipelineOCR:
                  det_db_unclip_ratio: float = 1.5,
                  rec_score_thresh: float = 0.0,
                  input_interval: float = 0.0,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 version: str = 'v5'):
         """
         Initialize async OCR pipeline
         
@@ -851,13 +1003,15 @@ class AsyncPipelineOCR:
             self.det_models,
             det_db_thresh=det_db_thresh,
             det_db_box_thresh=det_db_box_thresh,
-            det_db_unclip_ratio=det_db_unclip_ratio
+            det_db_unclip_ratio=det_db_unclip_ratio,
+            version=version
         )
         self.classification_node = ClassificationNode(self.cls_model)
         self.recognition_node = RecognitionNode(
             self.rec_models,
             dict_dir=rec_dict_dir,
-            rec_score_thresh=rec_score_thresh
+            rec_score_thresh=rec_score_thresh,
+            version=version
         )
         
         self.ocr_run_count = 0
@@ -1442,7 +1596,14 @@ class AsyncPipelineOCR:
         job.stage_stats['cls']['count'] = len(job.crops)
         job.state = 'classifying'
         job.expected_cls_count = len(job.crops)
-        job.expected_rec_count = len(job.crops)
+        # v6 may split one crop into several tiles -> count async runs, not crops.
+        # Classification only rotates crops by 180 degrees, which preserves the
+        # shape, so the tile count computed here still holds at submit time.
+        job.rec_tile_expected = {
+            idx: self._rec_tile_count(crop) for idx, crop in enumerate(job.crops)
+        }
+        job.expected_rec_count = sum(job.rec_tile_expected.values())
+        job.rec_tile_results = {}
         job.rec_results_dict = {}
         job.rec_completed_count = 0
 
@@ -1592,6 +1753,22 @@ class AsyncPipelineOCR:
 
         return 0
     
+    def _rec_tiles(self, crop):
+        """Tiles a crop is recognized as (one element unless v6 needs a split)."""
+        node = self.recognition_node
+        if getattr(node, 'version', 'v5') != 'v6' or not getattr(node, 'rec_input_hw', None):
+            return [crop]
+        mapped_ratio = node.router(crop.shape[1], crop.shape[0])
+        bucket_hw = getattr(node, 'rec_input_shapes', {}).get(mapped_ratio, node.rec_input_hw)
+        target_ratio = bucket_hw[1] / bucket_hw[0]
+        return split_crop_for_recognition(crop, target_ratio, node.overlap_ratio)
+
+    def _rec_tile_count(self, crop):
+        """Number of async recognition runs this crop will need."""
+        if crop is None:
+            return 1
+        return len(self._rec_tiles(crop))
+
     def _submit_recognition_for_crop(self, job: OCRJob, crop_idx: int):
         """Submit recognition for a single crop immediately after classification."""
         if not job.crops:
@@ -1628,21 +1805,30 @@ class AsyncPipelineOCR:
             ratio_preprocess = self.recognition_node.rec_preprocess_map[mapped_ratio]
             ratio_model = self.rec_models[mapped_ratio]
 
-            inp = ratio_preprocess(crop)
-            rec_input = self.recognition_node.prepare_input(inp)
+            tiles = self._rec_tiles(crop)
+            rec_inputs = []
+            for tile in tiles:
+                inp = ratio_preprocess(tile)
+                rec_inputs.append(self.recognition_node.prepare_input(inp))
             prep_time = time.time() - t0
 
-            job.rec_input_buffers[crop_idx] = rec_input
+            for tile_idx, rec_input in enumerate(rec_inputs):
+                job.rec_input_buffers[(crop_idx, tile_idx)] = rec_input
 
             with self.lock:
-                self.stats['rec_submitted'] += 1
+                self.stats['rec_submitted'] += len(rec_inputs)
                 job.stage_stats['rec']['preprocess'] += prep_time
-            
+                job.rec_tile_expected[crop_idx] = len(rec_inputs)
+
             # Record start time for this crop
             job.rec_crop_start_times[crop_idx] = time.time()
 
             self._monitor_queues()
-            ratio_model.run_async([job.rec_input_buffers[crop_idx]], user_arg=(job.job_id, crop_idx, 'rec', mapped_ratio))
+            for tile_idx in range(len(rec_inputs)):
+                ratio_model.run_async(
+                    [job.rec_input_buffers[(crop_idx, tile_idx)]],
+                    user_arg=(job.job_id, crop_idx, 'rec', mapped_ratio, tile_idx)
+                )
 
         except Exception as e:
             self._log(f"ERROR submitting rec for {job.job_id} crop_{crop_idx}: {e}", force=True)
@@ -1656,18 +1842,24 @@ class AsyncPipelineOCR:
             self._log("WARNING: Recognition callback received None user_arg, skipping", force=True)
             return 0
         
-        job_id, crop_idx, stage, mapped_ratio = user_arg
-        
+        # v6 submits one run per tile; v5 (and short v6 crops) submit a single
+        # tile, so the 4-element form is still accepted for compatibility.
+        if len(user_arg) == 5:
+            job_id, crop_idx, stage, mapped_ratio, tile_idx = user_arg
+        else:
+            job_id, crop_idx, stage, mapped_ratio = user_arg
+            tile_idx = 0
+
         try:
             # Postprocess (outside lock)
             t0 = time.time()
-            res = self.recognition_node.rec_postprocess(outputs[0])[0]  # (text, score)
-            text, score = res
+            tile_res = self.recognition_node.rec_postprocess(outputs[0])[0]  # (text, score)
             post_time = time.time() - t0
             
             # Debug logging
             if hasattr(self, 'debug') and self.debug:
-                print(f"[DEBUG] Rec complete: {job_id}, crop_{crop_idx}, score={score:.3f}, text='{text[:20]}...'")
+                print(f"[DEBUG] Rec complete: {job_id}, crop_{crop_idx}, tile_{tile_idx}, "
+                      f"score={tile_res[1]:.3f}, text='{tile_res[0][:20]}...'")
             
             # Update job state
             with self.lock:
@@ -1678,7 +1870,23 @@ class AsyncPipelineOCR:
                     return 0
                 
                 job.stage_stats['rec']['postprocess'] += post_time
-                
+
+                # Buffer this tile; the crop's text is only final once every tile
+                # of that crop has come back.
+                job.rec_tile_results.setdefault(crop_idx, {})[tile_idx] = tile_res
+                tiles_done = job.rec_tile_results[crop_idx]
+                tiles_expected = job.rec_tile_expected.get(crop_idx, 1)
+                crop_complete = len(tiles_done) >= tiles_expected
+                if crop_complete:
+                    ordered = [tiles_done[i] for i in sorted(tiles_done)]
+                    if len(ordered) == 1:
+                        text, score = ordered[0]
+                    else:
+                        text, score = self.recognition_node.merge_recognition_results(
+                            ordered, self.recognition_node.overlap_ratio)
+                else:
+                    text, score = tile_res
+
                 # Calculate individual duration
                 if crop_idx in job.rec_crop_start_times:
                     start_time = job.rec_crop_start_times[crop_idx]
@@ -1690,7 +1898,7 @@ class AsyncPipelineOCR:
                 job.debug_data['recognition']['order'].append(crop_idx)
                 
                 # Apply drop threshold and store in dictionary (order-independent)
-                if score > self.recognition_node.drop:
+                if crop_complete and score > self.recognition_node.drop:
                     # Store result in dict format indexed by crop_idx
                     result = {
                         'bbox_index': crop_idx,
@@ -1704,11 +1912,12 @@ class AsyncPipelineOCR:
                     job.debug_data['recognition']['results'].append({
                         'bbox_index': crop_idx,
                         'text': text,
-                        'score': float(score)
+                        'score': float(score),
+                        'tiles': tiles_expected
                     })
                 
                 job.rec_completed_count += 1
-                job.rec_input_buffers.pop(crop_idx, None)
+                job.rec_input_buffers.pop((crop_idx, tile_idx), None)
                 all_done = (job.rec_completed_count >= job.expected_rec_count)
                 
                 if all_done:
