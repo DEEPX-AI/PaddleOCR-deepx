@@ -688,3 +688,42 @@ else:
 9. RT optimization environment variables applied
 
 All NPU-related settings from deepx have been fully ported to the FastAPI service! 🎉
+
+## Corporate network: model download fails with SSLError
+
+On an intranet that terminates TLS (the CA lives in the system trust store but
+not in Python's `certifi` bundle), the CPU path fails at startup:
+
+```
+No model hoster is available! Please check your network connection to one of
+the following model hoster: HuggingFace, ModelScope, AIStudio, or BOS.
+...
+Exception: No available model hosting platforms detected.
+```
+
+`curl` succeeds against the same hosts, which makes this look like a network
+outage when it is a trust-store mismatch. Point `requests` at the system store:
+
+```bash
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+```
+
+This affects the CPU path only — the NPU path loads local `.dxnn` files and
+needs no model hoster.
+
+## PP-OCRv6 on the CPU path
+
+CPU-side v6 needs `paddleocr>=3.7.0`; PP-OCRv6 configs do not exist in 3.3.2.
+`paddlepaddle` must be `>=3.2.2` as well — 3.0.0 cannot load the newer model
+files and fails with `Type of attribute: strides is not right`.
+
+```python
+PaddleOCR(text_detection_model_name="PP-OCRv6_medium_det",
+          text_recognition_model_name="PP-OCRv6_medium_rec")
+```
+
+Sizes: `PP-OCRv6_{tiny,small,medium}_{det,rec}`.
+
+First CPU inference downloads the models and can take several minutes; the
+service test suite's 300 s per-test timeout can trip on that cold start.
