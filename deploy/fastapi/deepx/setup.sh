@@ -74,8 +74,8 @@ main() {
     # --- PP-OCRv6 (optional) -------------------------------------------------
     # v6 ships detection + recognition only; textline orientation and the
     # document preprocessing models keep using the v5 artifacts above.
-    # The v6 payload is not on sdk.deepx.ai yet, so a download failure here is
-    # NOT fatal - it prints manual placement instructions instead.
+    # A download failure here is NOT fatal (v6 is optional): it prints manual
+    # placement instructions and leaves PP-OCRv5 fully working.
     GET_RES_CMD3="$SCRIPT_DIR/scripts/get_resource.sh --src_path=$V6_SOURCE_PATH --output=$OUTPUT_DIR/v6 $SYMLINK_ARGS $FORCE_ARGS --extract"
     echo "Get Resources from remote server (PP-OCRv6, optional) ..."
     echo "$GET_RES_CMD3"
@@ -85,19 +85,23 @@ main() {
     else
         cat <<'V6MSG'
 --------------------------------------------------------------------------
-[PP-OCRv6] Optional models were not downloaded (not published on sdk.deepx.ai yet).
+[PP-OCRv6] Optional models were not downloaded (network or server issue).
 
 PP-OCRv5 is unaffected and remains the default (OCR_VERSION unset or v5).
 
-To enable v6, place these files in engine/model_files/v6/ manually:
-    det_v6_s_640.dxnn       det_v6_m_640.dxnn
-    rec_v6_{s,m}_120.dxnn   rec_v6_{s,m}_240.dxnn   rec_v6_{s,m}_480.dxnn
-    rec_v6_{s,m}_720.dxnn   rec_v6_{s,m}_1200.dxnn  rec_v6_{s,m}_1680.dxnn
-    ppocrv6_dict.txt        (= rec_char_dict_medium.txt, 18712 lines)
+Retry:  ./setup.sh --force
+Or fetch the archive directly and unpack it into engine/model_files/v6/:
+    https://sdk.deepx.ai/res/assets/dx_baidu_PPOCR/v6.tar.gz
 
-Only rec_v6_<size>_240.dxnn is strictly required; any missing recognition
-bucket falls back to the widest model that is present (with reduced accuracy
-on long text lines).
+It contains (flat, no nested directory):
+    det_v6_{s,m}_640.dxnn        det_v6_{s,m}_960.dxnn
+    rec_v6_{s,m}_ratio_5.dxnn    rec_v6_{s,m}_ratio_15.dxnn
+    rec_v6_{s,m}_ratio_25.dxnn   ppocrv6_dict.txt
+
+Only rec_v6_<size>_ratio_5.dxnn is strictly required; any missing recognition
+bucket falls back to the nearest model that is present (with reduced accuracy
+on long text lines). Locally compiled width-named models
+(rec_v6_<size>_<width>.dxnn) are also accepted.
 
 Then run with:  OCR_VERSION=v6 V6_MODEL_SIZE=m ./run.sh
 --------------------------------------------------------------------------
