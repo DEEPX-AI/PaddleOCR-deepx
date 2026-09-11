@@ -74,10 +74,26 @@ def get_v6_model_size():
     """
     PP-OCRv6 model size selected by the V6_MODEL_SIZE environment variable.
 
-    Returns 's' (smaller/faster) or 'm' (default, more accurate).
+    Returns 't' (tiny), 's' (small) or 'm' (default, most accurate).
     """
     size = os.getenv('V6_MODEL_SIZE', 'm').lower()
-    return size if size in ('s', 'm') else 'm'
+    return size if size in ('t', 's', 'm') else 'm'
+
+
+def resolve_v6_dict(v6_dir, size):
+    """
+    Character dictionary for a PP-OCRv6 size.
+
+    Tiny has a 6906-class head while small/medium have 18710, so the
+    2026-09-11 rebuild ships rec_v6_<size>_dict.txt per size. Older packages
+    shipped a single ppocrv6_dict.txt shared by every size; that name is the
+    fallback, and is also what gets returned when nothing is present so the
+    caller reports one clear "dictionary not found" error.
+    """
+    per_size = v6_dir / f"rec_v6_{size}_dict.txt"
+    if per_size.exists():
+        return per_size
+    return v6_dir / 'ppocrv6_dict.txt'
 
 
 # ============================================================================
@@ -179,7 +195,8 @@ def load_npu_models_once():
         if not v6_dir.exists():
             error_msg = (
                 f"OCR_VERSION=v6 requested but the v6 model directory was not found: {v6_dir}. "
-                f"Place det_v6_{{s,m}}_640.dxnn, rec_v6_{{s,m}}_240.dxnn and ppocrv6_dict.txt "
+                f"Place det_v6_{{t,s,m}}_640.dxnn, rec_v6_{{t,s,m}}_ratio_5.dxnn and the "
+                f"matching dictionary (rec_v6_<size>_dict.txt or ppocrv6_dict.txt) "
                 f"there (see deepx/setup.sh), or unset OCR_VERSION to use v5."
             )
             print(f"❌ {error_msg}")
@@ -263,7 +280,7 @@ def load_npu_models_once():
             print(f"❌ {error_msg}")
             raise HTTPException(status_code=503, detail=error_msg)
 
-        dict_path = v6_dir / 'ppocrv6_dict.txt'
+        dict_path = resolve_v6_dict(v6_dir, v6_size)
     else:
         # Detection models (640, 960)
         det_prefix = 'det_mobile' if model_type == 'mobile' else 'det_v5'

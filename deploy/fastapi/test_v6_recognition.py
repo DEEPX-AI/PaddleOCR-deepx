@@ -11,10 +11,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+# Only "deepx" goes on sys.path — NOT "deepx/engine". Adding the engine dir
+# puts its own paddleocr.py ahead of the pip-installed paddleocr package, so
+# any later "from paddleocr import PaddleOCR" (ocr_service does this) resolves
+# to the fork module and dies on its relative imports. engine/paddleocr.py
+# appends its own directory itself, so the absolute imports inside it still work.
 DEEPX = Path(__file__).resolve().parent / "deepx"
-for p in (str(DEEPX), str(DEEPX / "engine")):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+if str(DEEPX) not in sys.path:
+    sys.path.insert(0, str(DEEPX))
 
 from engine.paddleocr import split_crop_for_recognition  # noqa: E402
 from engine.utils import merge_recognition_results  # noqa: E402

@@ -171,7 +171,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--single", choices=["v5", "v6"],
                     help="run one configuration in this process (used by the driver)")
-    ap.add_argument("--size", default="m", choices=["s", "m"])
+    ap.add_argument("--size", default="m", choices=["t", "s", "m"])
     ap.add_argument("--model-dir", default=None,
                     help="override the v6 model directory (V6_MODEL_DIR)")
     ap.add_argument("--out", default=str(HERE / "benchmark_results.json"))
