@@ -2363,6 +2363,45 @@ def preload_models():
     print("="*60 + "\n")
 
 if __name__ == '__main__':
+    import argparse
+
+    from model_selection import SelectionError, apply_to_env, resolve
+
+    _ap = argparse.ArgumentParser(
+        description="PaddleOCR FastAPI service (CPU / GPU / DEEPX NPU)")
+    _ap.add_argument('--ocr-version', choices=['v5', 'v6'],
+                     help='OCR model version (required together with --model-size)')
+    _ap.add_argument('--model-size',
+                     help='v6: medium|small|tiny   v5: server|mobile')
+    _ap.add_argument('--no-interactive', action='store_true',
+                     help='never prompt; the model must be specified')
+    _ap.add_argument('--port', type=int)
+    _ap.add_argument('--host')
+    _args = _ap.parse_args()
+
+    # CLI wins over environment; ENV is how Docker injects the choice.
+    _interactive = (sys.stdin.isatty() and not _args.no_interactive
+                    and os.getenv('OCR_NONINTERACTIVE') != '1')
+    try:
+        _version, _size = resolve(
+            _args.ocr_version or os.getenv('OCR_VERSION'),
+            _args.model_size or os.getenv('MODEL_SIZE'),
+            isatty=_interactive,
+        )
+    except SelectionError as _exc:
+        print(f"\nERROR: {_exc}\n", file=sys.stderr)
+        sys.exit(2)
+
+    # get_ocr_version() / get_v6_model_size() / get_model_paths() all read these
+    # with os.getenv at call time, so setting them here takes effect.
+    apply_to_env(_version, _size)
+    print(f"   Model selection: OCR_VERSION={_version}  size={_size}")
+
+    if _args.port:
+        os.environ['PORT'] = str(_args.port)
+    if _args.host:
+        os.environ['HOST'] = _args.host
+
     port = int(os.getenv('PORT', 8080))
     host = os.getenv('HOST', '0.0.0.0')
     

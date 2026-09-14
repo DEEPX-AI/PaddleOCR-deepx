@@ -114,6 +114,13 @@ RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
 RUN chown -R paddleocr:paddleocr /app/deepx
 
 # Set DEEPX_PATH environment variable
+# Model selection. The service refuses to start without an explicit choice,
+# so these give the image a documented default that `docker run -e` overrides:
+#   docker run -e OCR_VERSION=v6 -e MODEL_SIZE=small ...
+#   docker run -e OCR_VERSION=v5 -e MODEL_SIZE=server ...
+ENV OCR_VERSION=v6
+ENV MODEL_SIZE=medium
+
 ENV DEEPX_PATH=/app/deepx
 
 # Set FONT_PATH environment variable
@@ -180,11 +187,11 @@ RUN if [ "${SETUP_DEEPX}" = "true" ]; then \
         echo 'echo "NFH_OUTPUT_WORKER_THREADS=${NFH_OUTPUT_WORKER_THREADS:-not set}"' >> /app/start.sh && \
         echo 'echo ""' >> /app/start.sh && \
         echo '' >> /app/start.sh && \
-        echo 'exec python ocr_service.py' >> /app/start.sh && \
+        echo 'exec python ocr_service.py --no-interactive --ocr-version "${OCR_VERSION}" --model-size "${MODEL_SIZE}"' >> /app/start.sh && \
         chmod +x /app/start.sh; \
     else \
         echo '#!/bin/bash' > /app/start.sh && \
-        echo 'exec python ocr_service.py' >> /app/start.sh && \
+        echo 'exec python ocr_service.py --no-interactive --ocr-version "${OCR_VERSION}" --model-size "${MODEL_SIZE}"' >> /app/start.sh && \
         chmod +x /app/start.sh; \
     fi
 

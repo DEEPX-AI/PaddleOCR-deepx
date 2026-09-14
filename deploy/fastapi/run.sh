@@ -13,6 +13,9 @@ SERVICE_SCRIPT="$SCRIPT_DIR/ocr_service.py"
 PORT="${PORT:-8080}"
 HOST="${HOST:-0.0.0.0}"
 MODEL_TYPE="mobile"  # default: mobile
+OCR_VERSION_OPT="${OCR_VERSION:-}"
+MODEL_SIZE_OPT="${MODEL_SIZE:-}"
+NO_INTERACTIVE=false
 USE_MOBILE_FLAG=false
 USE_SERVER_FLAG=false
 LAZY_LOAD_FLAG=false
@@ -37,16 +40,32 @@ while [[ $# -gt 0 ]]; do
             HOST="$2"
             shift 2
             ;;
+        --ocr-version)
+            OCR_VERSION_OPT="$2"
+            shift 2
+            ;;
+        --model-size)
+            MODEL_SIZE_OPT="$2"
+            shift 2
+            ;;
+        --no-interactive)
+            NO_INTERACTIVE=true
+            shift
+            ;;
         --use-mobile)
             USE_MOBILE_FLAG=true
             MODEL_TYPE="mobile"
-            export USE_MOBILE="true"
+            # Legacy alias: implies PP-OCRv5 + mobile, counts as fully specified.
+            OCR_VERSION_OPT="${OCR_VERSION_OPT:-v5}"
+            MODEL_SIZE_OPT="${MODEL_SIZE_OPT:-mobile}"
             shift
             ;;
         --use-server)
             USE_SERVER_FLAG=true
             MODEL_TYPE="server"
-            export USE_MOBILE="false"
+            # Legacy alias: implies PP-OCRv5 + server, counts as fully specified.
+            OCR_VERSION_OPT="${OCR_VERSION_OPT:-v5}"
+            MODEL_SIZE_OPT="${MODEL_SIZE_OPT:-server}"
             shift
             ;;
         --lazy-load)
@@ -79,6 +98,13 @@ while [[ $# -gt 0 ]]; do
             echo -e "  ${GREEN}PORT${NC}             Service port"
             echo -e "  ${GREEN}HOST${NC}             Bind host"
             echo -e "  ${GREEN}USE_GPU${NC}          Use GPU (true/false)"
+            echo -e "  ${GREEN}--ocr-version${NC}    ${YELLOW}v5 | v6${NC} (required with --model-size)"
+            echo -e "  ${GREEN}--model-size${NC}     ${YELLOW}v6: medium|small|tiny   v5: server|mobile${NC}"
+            echo -e "  ${GREEN}--no-interactive${NC} ${YELLOW}Never prompt; the model must be specified${NC}"
+            echo -e ""
+            echo -e "  ${YELLOW}Omit both --ocr-version and --model-size to choose interactively.${NC}"
+            echo -e "  ${YELLOW}Giving only one of them is an error.${NC}"
+            echo -e ""
             echo -e "  ${GREEN}USE_MOBILE${NC}       Use mobile models (true/false)"
             echo -e "  ${GREEN}LAZY_LOAD${NC}        Enable lazy loading (true/false, default: false)"
             echo -e "  ${GREEN}PDF_DPI${NC}          PDF conversion DPI (default: 200)"
@@ -110,10 +136,10 @@ if [ "$USE_MOBILE_FLAG" = true ] && [ "$USE_SERVER_FLAG" = true ]; then
     exit 1
 fi
 
-# Set default if no flag was specified
-if [ "$USE_MOBILE_FLAG" = false ] && [ "$USE_SERVER_FLAG" = false ]; then
-    export USE_MOBILE="true"  # Default to mobile
-fi
+# Model version/size are resolved by model_selection.py (shared with
+# ocr_service.py) so both entry points follow identical rules: both options
+# given -> start; exactly one -> error with a hint; neither -> interactive on a
+# terminal, documented defaults otherwise.
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}PaddleOCR FastAPI Local Service${NC}"
@@ -152,19 +178,60 @@ if [ ! -f "$SERVICE_SCRIPT" ]; then
     exit 1
 fi
 
-# Check if DEEPX NPU is available and set SETUP_NPU accordingly
+# Resolve OCR model version/size (shared logic with ocr_service.py).
+RESOLVE_ARGS=()
+[ -n "$OCR_VERSION_OPT" ] && RESOLVE_ARGS+=(--ocr-version "$OCR_VERSION_OPT")
+[ -n "$MODEL_SIZE_OPT" ]  && RESOLVE_ARGS+=(--model-size  "$MODEL_SIZE_OPT")
+[ "$NO_INTERACTIVE" = true ] && RESOLVE_ARGS+=(--no-interactive)
+
+if ! SELECTION="$("$VENV_DIR/bin/python" "$SCRIPT_DIR/model_selection.py" --resolve "${RESOLVE_ARGS[@]}")"; then
+    # model_selection.py already printed the error and usage hint on stderr.
+    exit 2
+fi
+# Extract each key by name rather than splitting lines: under a pty the
+# interactive prompt echoes onto this same stream, so a line can arrive as
+# "Select [1]: OCR_VERSION=v6" and a naive split would export an empty value.
+_pick() { printf '%s\n' "$SELECTION" | sed -n "s/.*\\b$1=\\([A-Za-z0-9_]*\\).*/\\1/p" | tail -1; }
+for _key in OCR_VERSION MODEL_SIZE V6_MODEL_SIZE USE_MOBILE; do
+    _val="$(_pick "$_key")"
+    [ -n "$_val" ] && export "$_key=$_val"
+done
+echo -e "${YELLOW}   OCR_VERSION=${OCR_VERSION}  ${V6_MODEL_SIZE:+V6_MODEL_SIZE=$V6_MODEL_SIZE}${USE_MOBILE:+USE_MOBILE=$USE_MOBILE}${NC}"
+
+# DEEPX NPU environment.
+# An explicit SETUP_NPU from the caller always wins. This block used to set it
+# unconditionally, so `SETUP_NPU=true ./run.sh` was silently forced to CPU-only
+# whenever deepx_env.sh was absent - and deepx_env.sh only exists after
+# local_deepx_setup.sh has been run.
+# DX-RT tuning defaults. Without DXRT_TASK_MAX_LOAD the PP-OCRv5 server set
+# (11 engines) fails at load time with "Failed to register memory cache for
+# task 12". benchmark_npu.py reads this same file; run.sh used to skip it.
+ENV_DEEPX_FILE="$SCRIPT_DIR/.env.deepx"
+if [ -f "$ENV_DEEPX_FILE" ]; then
+    while IFS='=' read -r _k _v; do
+        case "$_k" in ''|\#*) continue ;; esac
+        _k="$(echo "$_k" | tr -d '[:space:]')"
+        [ -n "$_k" ] && [ -z "$(eval "echo \${$_k:-}")" ] && export "$_k=$(echo "$_v" | tr -d '[:space:]')"
+    done < "$ENV_DEEPX_FILE"
+fi
+
 DEEPX_ENV_FILE="$SCRIPT_DIR/deepx_env.sh"
 if [ -f "$DEEPX_ENV_FILE" ]; then
     echo -e "${YELLOW}🔧 Applying DEEPX NPU environment settings...${NC}"
     # Source with default values (1 2 1 3 2 4)
     source "$DEEPX_ENV_FILE"
-    # Enable NPU support
-    export SETUP_NPU="true"
     echo ""
-else
-    # No deepx_env.sh file means CPU only
-    export SETUP_NPU="false"
 fi
+
+if [ -z "${SETUP_NPU:-}" ]; then
+    # Not specified: enable NPU when the runtime is actually importable.
+    if "$VENV_DIR/bin/python" -c "import dx_engine" >/dev/null 2>&1; then
+        export SETUP_NPU="true"
+    else
+        export SETUP_NPU="false"
+    fi
+fi
+echo -e "${YELLOW}   SETUP_NPU=${SETUP_NPU}${NC}"
 
 # Export environment variables
 export PORT
