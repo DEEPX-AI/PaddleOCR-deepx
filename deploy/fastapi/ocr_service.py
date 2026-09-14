@@ -102,32 +102,45 @@ def resolve_v6_dict(v6_dir, size):
 
 def get_model_paths():
     """
-    Get model paths based on USE_MOBILE environment variable
-    Returns dict with detection and recognition model paths
+    Official PaddleOCR model names for the CPU/GPU path.
+
+    The NPU path loads .dxnn files directly, but here paddleocr is asked for
+    official models *by name*, and the name carries the version. OCR_VERSION
+    therefore has to be honoured in this function too - reading only USE_MOBILE
+    meant selecting v6 quietly served PP-OCRv5 weights.
+
+    The model *name* is always returned. The directory is only filled in when
+    the model is already cached; paddleocr downloads it on first use otherwise.
+    Returning None for the name would make paddleocr fall back to its own
+    default model, which is the same silent-v5 bug in a different disguise.
     """
-    use_mobile = os.getenv('USE_MOBILE', 'false').lower() == 'true'
+    version = get_ocr_version()
     models_dir = Path.home() / '.paddlex' / 'official_models'
-    
-    if use_mobile:
-        det_model_name = 'PP-OCRv5_mobile_det'
-        rec_model_name = 'PP-OCRv5_mobile_rec'
+
+    if version == 'v6':
+        # PP-OCRv6 sizes are scales: tiny < small < medium.
+        size = {'t': 'tiny', 's': 'small', 'm': 'medium'}[get_v6_model_size()]
+        det_model_name = f'PP-OCRv6_{size}_det'
+        rec_model_name = f'PP-OCRv6_{size}_rec'
+        model_type = size
     else:
-        det_model_name = 'PP-OCRv5_server_det'
-        rec_model_name = 'PP-OCRv5_server_rec'
-    
+        # PP-OCRv5 sizes are deployment targets: mobile or server.
+        use_mobile = os.getenv('USE_MOBILE', 'false').lower() == 'true'
+        model_type = 'mobile' if use_mobile else 'server'
+        det_model_name = f'PP-OCRv5_{model_type}_det'
+        rec_model_name = f'PP-OCRv5_{model_type}_rec'
+
     det_model_path = models_dir / det_model_name
     rec_model_path = models_dir / rec_model_name
-    
-    # Check if models exist
-    result = {
-        'det_model_name': det_model_name if det_model_path.exists() else None,
+
+    return {
+        'det_model_name': det_model_name,
         'det_model_dir': str(det_model_path) if det_model_path.exists() else None,
-        'rec_model_name': rec_model_name if rec_model_path.exists() else None,
+        'rec_model_name': rec_model_name,
         'rec_model_dir': str(rec_model_path) if rec_model_path.exists() else None,
-        'model_type': 'mobile' if use_mobile else 'server'
+        'model_type': model_type,
+        'ocr_version': version,
     }
-    
-    return result
 
 # ============================================================================
 # DEEPX NPU Support - Single Model Set with Dual Instances
