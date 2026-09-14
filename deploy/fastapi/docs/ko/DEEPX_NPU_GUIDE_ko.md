@@ -45,7 +45,7 @@ source venv/bin/activate
 source deepx_env.sh  # RT 최적화 환경 변수 적용
 
 # 또는 run.sh 사용 (자동으로 deepx_env.sh 적용)
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 ```
 
 **run.sh가 자동으로 수행하는 작업:**
@@ -320,7 +320,7 @@ source deepx_env.sh
 python ocr_service.py
 
 # 방법 2: run.sh 사용 (권장)
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 ```
 
 ### API 사용
@@ -412,7 +412,7 @@ print(response.json())
 
 ```bash
 # 서비스 시작
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 
 # 테스트 실행
 ./run_tests.sh --all
@@ -570,7 +570,7 @@ source deepx_env.sh
 source deepx_env.sh 1 2 1 3 2 4
 
 # 서비스 재시작
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 ```
 
 ### 8. Import 에러
@@ -688,3 +688,58 @@ else:
 9. RT 최적화 환경 변수 적용
 
 모든 deepx의 NPU 관련 설정이 FastAPI 서비스에 완전히 포팅되었습니다! 🎉
+
+## 사내망: SSLError 로 모델 다운로드 실패
+
+TLS 를 종단하는 사내망(해당 CA 가 시스템 신뢰 저장소에는 있으나 Python 의 `certifi`
+번들에는 없는 환경)에서는 CPU 경로가 기동 중 실패합니다:
+
+```
+No model hoster is available! Please check your network connection to one of
+the following model hoster: HuggingFace, ModelScope, AIStudio, or BOS.
+...
+Exception: No available model hosting platforms detected.
+```
+
+같은 호스트에 `curl` 은 성공하기 때문에 네트워크 장애처럼 보이지만, 실제로는 신뢰
+저장소 불일치입니다. `requests` 가 시스템 저장소를 보게 하면 해결됩니다:
+
+```bash
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+```
+
+CPU 경로에만 해당합니다 — NPU 경로는 로컬 `.dxnn` 파일을 읽으므로 model hoster 가
+필요 없습니다.
+
+## CPU 경로에서의 PP-OCRv6
+
+CPU 쪽 v6 에는 `paddleocr>=3.7.0` 이 필요합니다. 3.3.2 에는 PP-OCRv6 config 가
+존재하지 않습니다. `paddlepaddle` 도 `>=3.2.2` 여야 합니다 — 3.0.0 은 새 모델 파일을
+읽지 못하고 `Type of attribute: strides is not right` 로 실패합니다.
+
+```python
+PaddleOCR(text_detection_model_name="PP-OCRv6_medium_det",
+          text_recognition_model_name="PP-OCRv6_medium_rec")
+```
+
+크기: `PP-OCRv6_{tiny,small,medium}_{det,rec}`.
+
+CPU 첫 추론은 모델을 내려받느라 수 분이 걸릴 수 있습니다. 서비스 테스트 스위트의
+테스트당 300초 타임아웃이 이 콜드 스타트에서 걸릴 수 있습니다.
+
+## 모델 버전·크기 선택
+
+`run.sh` 와 `python ocr_service.py` 모두 버전과 크기를 **함께** 받습니다.
+
+```bash
+./run.sh --ocr-version v6 --model-size medium   # v6: medium | small | tiny
+./run.sh --ocr-version v5 --model-size server   # v5: server | mobile
+./run.sh                                        # 둘 다 생략 -> 대화형 메뉴
+```
+
+하나만 지정하면 에러입니다. 터미널이 아닌 환경(Docker, CI)에서는 모델이 지정되지
+않으면 기동을 거부합니다 — 어떤 가중치로 서빙 중인지 불분명한 상태를 만들지 않기
+위해서입니다. Docker 는 `OCR_VERSION` / `MODEL_SIZE` 환경변수로 주입합니다.
+
+> v6 의 `s` 는 **small**(server 아님), `m` 은 **medium**(mobile 아님) 입니다.

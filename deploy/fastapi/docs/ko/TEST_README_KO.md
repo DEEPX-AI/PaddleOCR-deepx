@@ -56,7 +56,7 @@ docker run -d -p 8080:8080 --name ocr-fastapi paddleocr-fastapi-service:latest
 
 # 또는 로컬 실행
 cd /dataPaddleOCR/deploy/fastapi
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 ```
 
 **서비스 실행 확인:**
@@ -389,10 +389,10 @@ docker ps | grep ocr-fastapi
 docker run -d -p 8080:8080 --name ocr-fastapi paddleocr-fastapi-service:latest
 
 # 또는 로컬 실행
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 
 # 커스텀 포트의 경우
-./run.sh --port 8081
+./run.sh --ocr-version v6 --model-size medium --port 8081
 ./run_tests.sh --port 8081
 ```
 

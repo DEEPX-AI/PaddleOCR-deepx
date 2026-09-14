@@ -1,43 +1,132 @@
 # PaddleOCR FastAPI OCR Service
 
-PaddlePaddle 3.0 기반의 FastAPI를 사용한 OCR REST API 서비스입니다. PP-OCRv5 모델을 사용합니다.
+PaddlePaddle 3.0 기반 FastAPI OCR REST API 서비스입니다.
+**PP-OCRv6(기본)** 와 **PP-OCRv5** 를 지원하며, CPU · GPU · DEEPX DX-M1 NPU 에서 동작합니다.
 
-## 🎯 빠른 실행 가이드
+## 📦 모델 버전
 
-### 로컬 환경 (개발/테스트)
+두 세대의 모델을 제공합니다. **기본값은 PP-OCRv6** 입니다.
+
+| 버전 | 크기 | 비고 |
+|---|---|---|
+| **PP-OCRv6** (기본) | `medium` · `small` · `tiny` | 크기는 **모델 규모** |
+| PP-OCRv5 | `server` · `mobile` | 크기는 **배포 대상** |
+
+> ⚠️ 두 버전의 크기 이름은 서로 이어지지 않습니다. v6 의 `s` 는 **small**(server 아님),
+> `m` 은 **medium**(mobile 아님) 입니다.
+
+DX-M1 NPU 에서 문서 이미지 20장으로 실측한 값입니다:
+
+| 선택 | 정확도 | FPS | 이럴 때 |
+|---|---|---|---|
+| `--ocr-version v5 --model-size server` | 88.5% | 1.19 | 정확도 최우선 |
+| `--ocr-version v6 --model-size medium` | 86.5% | 1.34 | **기본값** |
+| `--ocr-version v6 --model-size small` | 85.3% | 2.39 | 균형 |
+| `--ocr-version v6 --model-size tiny` | 78.0% | 4.95 | 처리량 우선 |
+
+정확도는 `deepx/images/labels.json` 라벨 대비 `1 - 정규화 편집거리` 입니다. 위 수치는
+NPU 실측이며, CPU/GPU 는 같은 모델이라 정확도는 동일하고 속도만 느립니다.
+
+### 모델 선택 방법
+
+버전과 크기는 **함께 지정해야 합니다**. 둘 다 주면 바로 기동합니다:
+
 ```bash
-cd PaddleOCR/deploy/fastapi
+./run.sh --ocr-version v6 --model-size small
+```
 
-# 1. 환경 설정 (최초 1회만)
-./local_setup.sh
+**둘 다 생략하면** 대화형 메뉴가 뜹니다:
 
-# 2. 서버 실행
+```bash
 ./run.sh
 ```
-
-### 로컬 환경 with DEEPX NPU (하드웨어 가속)
-```bash
-cd PaddleOCR/deploy/fastapi
-
-# 1. NPU 환경 설정 (최초 1회만)
-./local_deepx_setup.sh --dx_rt /path/to/dx_rt
-
-# 2. 서버 실행 (자동으로 NPU 설정 적용)
-./run.sh
+```
+OCR model version
+  1) v6       PP-OCRv6  (default, recommended)  (default)
+  2) v5       PP-OCRv5  (previous generation)
+Select [1]:
 ```
 
-> **참고**: DEEPX NPU 하드웨어 가속을 사용하려면 [DEEPX NPU 지원 가이드](docs/ko/DEEPX_NPU_GUIDE_ko.md)를 참고하세요
+하나만 주면 에러입니다 — 크기 이름이 버전마다 다르므로 버전이 명시되어야 합니다.
+암묵적 기본값은 없습니다. 터미널이 아닌 환경(Docker, CI, `nohup`)에서는 어떤 모델인지
+불분명한 채로 뜨는 대신 기동을 거부합니다.
 
-### Docker 환경 (운영/배포)
+환경변수로도 지정할 수 있습니다. Docker 는 이 방식으로 주입합니다:
+
 ```bash
-cd PaddleOCR/deploy/fastapi
-
-# 빌드 + 실행을 한 번에
-./docker_run.sh
+OCR_VERSION=v6 MODEL_SIZE=small ./run.sh
 ```
+
+### 기존 PP-OCRv5 를 계속 쓰려면
+
+제거된 것은 없습니다. 명시적으로 선택하면 됩니다:
+
+```bash
+./run.sh --ocr-version v5 --model-size server   # 기존 기본값
+./run.sh --ocr-version v5 --model-size mobile
+```
+
+기존 `--use-server` / `--use-mobile` 플래그도 그대로 동작하며 v5 를 의미합니다.
 
 ---
 
+## 🎯 빠른 시작 가이드
+
+먼저 연산 백엔드를 고르고, 그다음 모델을 고릅니다. 설치 과정은 백엔드마다 다르지만
+모델 옵션은 어디서나 동일합니다.
+
+### CPU (기본)
+
+```bash
+cd PaddleOCR/deploy/fastapi
+
+./local_setup.sh                                  # 최초 1회
+./run.sh --ocr-version v6 --model-size medium
+```
+
+### GPU
+
+```bash
+cd PaddleOCR/deploy/fastapi
+
+./local_setup.sh --gpu                            # 최초 1회
+USE_GPU=true ./run.sh --ocr-version v6 --model-size medium
+```
+
+### DEEPX DX-M1 NPU
+
+```bash
+cd PaddleOCR/deploy/fastapi
+
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt     # 최초 1회
+cd deepx && ./setup.sh && cd ..                   # .dxnn 모델 다운로드
+./run.sh --ocr-version v6 --model-size medium
+```
+
+`run.sh` 는 `dx_engine` 런타임을 import 할 수 있으면 NPU 를 활성화합니다.
+강제하려면 `SETUP_NPU=true|false` 를 지정하세요.
+
+> **NPU 는 서버 단위가 아니라 요청 단위로 선택합니다.** 한 서버가 둘 다 처리합니다 —
+> 요청 본문에 `"deepx": true` 를 넣으면 그 요청만 NPU 로, 생략하면 CPU/GPU 로 돕니다.
+> `USE_GPU` 와 `deepx` 는 서로 독립입니다.
+
+자세한 내용은 [DEEPX NPU 지원 가이드](docs/ko/DEEPX_NPU_GUIDE_ko.md) 를 참고하세요.
+
+### Docker
+
+```bash
+cd PaddleOCR/deploy/fastapi
+
+./docker_run.sh                                   # 빌드 + 실행
+```
+
+이미지에는 `OCR_VERSION=v6`, `MODEL_SIZE=medium` 이 선언되어 있으며 실행 시 덮어쓸 수 있습니다:
+
+```bash
+docker run -e OCR_VERSION=v6 -e MODEL_SIZE=small ...
+```
+
+---
 ## 🚀 상세 가이드
 
 ### 방법 1: 로컬 환경에서 실행
@@ -95,15 +184,23 @@ chmod +x local_setup.sh
 
 #### 1.2 서버 실행 (run.sh)
 
-**간편한 실행:**
+**대화형 (메뉴에서 모델 선택):**
 ```bash
 ./run.sh
 ```
 
+**비대화형 (모델을 미리 지정):**
+```bash
+./run.sh --ocr-version v6 --model-size medium
+```
+
 **커스텀 포트:**
 ```bash
-./run.sh --port 9000
+./run.sh --ocr-version v6 --model-size medium --port 9000
 ```
+
+> `--port` 만 주면 모델은 여전히 미지정이므로 `./run.sh --port 9000` 은 대화형 메뉴가
+> 뜹니다. 메뉴 표시 여부를 결정하는 것은 `--ocr-version` 과 `--model-size` 뿐입니다.
 
 **환경 변수 사용:**
 ```bash

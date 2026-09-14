@@ -1,43 +1,133 @@
 # PaddleOCR FastAPI OCR Service
 
-An OCR REST API service using FastAPI based on PaddlePaddle 3.0. Uses PP-OCRv5 models.
+An OCR REST API service using FastAPI based on PaddlePaddle 3.0.
+Supports **PP-OCRv6 (default)** and **PP-OCRv5**, on CPU, GPU or the DEEPX DX-M1 NPU.
 
-## 🎯 Quick Start Guide
+## 📦 Model Versions
 
-### Local Environment (Development/Testing)
+The service ships two model generations. **PP-OCRv6 is the default.**
+
+| Version | Sizes | Notes |
+|---|---|---|
+| **PP-OCRv6** (default) | `medium` · `small` · `tiny` | Sizes are **model scales** |
+| PP-OCRv5 | `server` · `mobile` | Sizes are **deployment targets** |
+
+> ⚠️ The letters do not carry over between versions. In v6, `s` means **small**
+> (not server) and `m` means **medium** (not mobile).
+
+Measured on the DX-M1 NPU with 20 document images:
+
+| Selection | Accuracy | FPS | Use when |
+|---|---|---|---|
+| `--ocr-version v5 --model-size server` | 88.5% | 1.19 | Highest accuracy |
+| `--ocr-version v6 --model-size medium` | 86.5% | 1.34 | **Default** |
+| `--ocr-version v6 --model-size small` | 85.3% | 2.39 | Balanced |
+| `--ocr-version v6 --model-size tiny` | 78.0% | 4.95 | Throughput first |
+
+Accuracy is `1 - normalized edit distance` against the labels in
+`deepx/images/labels.json`. These numbers are NPU measurements; CPU/GPU accuracy
+is the same model, only slower.
+
+### Choosing a model
+
+The version and size are **required together**. Give both to start immediately:
+
 ```bash
-cd PaddleOCR/deploy/fastapi
+./run.sh --ocr-version v6 --model-size small
+```
 
-# 1. Environment setup (first time only)
-./local_setup.sh
+Give **neither** and you get an interactive menu:
 
-# 2. Start server
+```bash
 ./run.sh
 ```
-
-### Local Environment with DEEPX NPU (Hardware Acceleration)
-```bash
-cd PaddleOCR/deploy/fastapi
-
-# 1. NPU environment setup (first time only)
-./local_deepx_setup.sh --dx_rt /path/to/dx_rt
-
-# 2. Start server (automatically applies NPU settings)
-./run.sh
+```
+OCR model version
+  1) v6       PP-OCRv6  (default, recommended)  (default)
+  2) v5       PP-OCRv5  (previous generation)
+Select [1]:
 ```
 
-> **Note**: For DEEPX NPU hardware acceleration, see [DEEPX NPU Support Guide](docs/DEEPX_NPU_GUIDE.md)
+Giving only one is an error — the size names differ per version, so the version
+must be explicit. There is no silent default: outside a terminal (Docker, CI,
+`nohup`) the service refuses to start rather than serve an unstated model.
 
-### Docker Environment (Production/Deployment)
+Environment variables work too, which is how Docker injects the choice:
+
 ```bash
-cd PaddleOCR/deploy/fastapi
-
-# Build + Run in one command
-./docker_run.sh
+OCR_VERSION=v6 MODEL_SIZE=small ./run.sh
 ```
+
+### Still on PP-OCRv5?
+
+Nothing is removed. Select it explicitly:
+
+```bash
+./run.sh --ocr-version v5 --model-size server   # previous default
+./run.sh --ocr-version v5 --model-size mobile
+```
+
+The legacy `--use-server` / `--use-mobile` flags still work and imply v5.
 
 ---
 
+## 🎯 Quick Start Guide
+
+Pick the compute backend first, then the model. Setup differs per backend; the
+model options above are identical everywhere.
+
+### CPU (default)
+
+```bash
+cd PaddleOCR/deploy/fastapi
+
+./local_setup.sh                                  # first time only
+./run.sh --ocr-version v6 --model-size medium
+```
+
+### GPU
+
+```bash
+cd PaddleOCR/deploy/fastapi
+
+./local_setup.sh --gpu                            # first time only
+USE_GPU=true ./run.sh --ocr-version v6 --model-size medium
+```
+
+### DEEPX DX-M1 NPU
+
+```bash
+cd PaddleOCR/deploy/fastapi
+
+./local_deepx_setup.sh --dx_rt /path/to/dx_rt     # first time only
+cd deepx && ./setup.sh && cd ..                   # download .dxnn models
+./run.sh --ocr-version v6 --model-size medium
+```
+
+`run.sh` enables NPU support when the `dx_engine` runtime is importable; set
+`SETUP_NPU=true|false` to force it either way.
+
+> **NPU is chosen per request, not per server.** One server serves both: send
+> `"deepx": true` in the request body to run that request on the NPU, omit it to
+> run on CPU/GPU. `USE_GPU` and `deepx` are independent.
+
+See the [DEEPX NPU Support Guide](docs/DEEPX_NPU_GUIDE.md) for details.
+
+### Docker
+
+```bash
+cd PaddleOCR/deploy/fastapi
+
+./docker_run.sh                                   # build + run
+```
+
+The image declares `OCR_VERSION=v6` and `MODEL_SIZE=medium`; override at run time:
+
+```bash
+docker run -e OCR_VERSION=v6 -e MODEL_SIZE=small ...
+```
+
+---
 ## 🚀 Detailed Guide
 
 ### Method 1: Running in Local Environment
@@ -95,15 +185,24 @@ chmod +x local_setup.sh
 
 #### 1.2 Start Server (run.sh)
 
-**Simple execution:**
+**Interactive (pick the model from a menu):**
 ```bash
 ./run.sh
 ```
 
+**Non-interactive (model given up front):**
+```bash
+./run.sh --ocr-version v6 --model-size medium
+```
+
 **Custom port:**
 ```bash
-./run.sh --port 9000
+./run.sh --ocr-version v6 --model-size medium --port 9000
 ```
+
+> `--port` alone still leaves the model unspecified, so `./run.sh --port 9000`
+> opens the interactive menu. Only `--ocr-version` and `--model-size` decide
+> whether the menu appears.
 
 **Using environment variables:**
 ```bash

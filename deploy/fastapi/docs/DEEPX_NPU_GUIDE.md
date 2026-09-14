@@ -45,7 +45,7 @@ source venv/bin/activate
 source deepx_env.sh  # Apply RT optimization environment variables
 
 # Or use run.sh (automatically applies deepx_env.sh)
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 ```
 
 **What run.sh automatically does:**
@@ -320,7 +320,7 @@ source deepx_env.sh
 python ocr_service.py
 
 # Method 2: Use run.sh (recommended)
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 ```
 
 ### API Usage
@@ -412,7 +412,7 @@ print(response.json())
 
 ```bash
 # Start service
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 
 # Run tests
 ./run_tests.sh --all
@@ -570,7 +570,7 @@ source deepx_env.sh
 source deepx_env.sh 1 2 1 3 2 4
 
 # Restart service
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 ```
 
 ### 8. Import Error
@@ -727,3 +727,20 @@ Sizes: `PP-OCRv6_{tiny,small,medium}_{det,rec}`.
 
 First CPU inference downloads the models and can take several minutes; the
 service test suite's 300 s per-test timeout can trip on that cold start.
+
+## Selecting the model version and size
+
+`run.sh` and `python ocr_service.py` both take the version and size **together**.
+
+```bash
+./run.sh --ocr-version v6 --model-size medium   # v6: medium | small | tiny
+./run.sh --ocr-version v5 --model-size server   # v5: server | mobile
+./run.sh                                        # omit both -> interactive menu
+```
+
+Giving only one is an error. Outside a terminal (Docker, CI) the service refuses
+to start when no model is specified, rather than serving weights nobody stated.
+Docker injects the choice through the `OCR_VERSION` / `MODEL_SIZE` environment
+variables.
+
+> In v6, `s` means **small** (not server) and `m` means **medium** (not mobile).

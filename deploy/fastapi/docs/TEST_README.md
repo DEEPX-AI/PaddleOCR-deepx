@@ -56,7 +56,7 @@ docker run -d -p 8080:8080 --name ocr-fastapi paddleocr-fastapi-service:latest
 
 # Or run locally
 cd /dataPaddleOCR/deploy/fastapi
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 ```
 
 **Verify service is running:**
@@ -389,10 +389,10 @@ docker ps | grep ocr-fastapi
 docker run -d -p 8080:8080 --name ocr-fastapi paddleocr-fastapi-service:latest
 
 # Or run locally
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 
 # For custom port
-./run.sh --port 8081
+./run.sh --ocr-version v6 --model-size medium --port 8081
 ./run_tests.sh --port 8081
 ```
 

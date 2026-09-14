@@ -24,7 +24,7 @@ $HOME/.paddlex/official_models/
 **Mobile Model (default)**:
 ```bash
 # No environment variable or USE_MOBILE=true (default)
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 # or
 ./run.sh --use-mobile
 # or

@@ -24,7 +24,7 @@ $HOME/.paddlex/official_models/
 **Mobile 모델 (기본값)**:
 ```bash
 # 환경변수 없음 또는 USE_MOBILE=true (기본값)
-./run.sh
+./run.sh --ocr-version v6 --model-size medium
 # 또는
 ./run.sh --use-mobile
 # 또는
