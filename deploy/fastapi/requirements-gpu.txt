@@ -1,3 +1,13 @@
+# GPU build. paddlepaddle-gpu 3.x is NOT on PyPI - it lives on Paddle's own
+# wheel index, which some corporate networks block. PyPI stops at 2.6.2, which
+# predates PP-OCRv6, so installing from PyPI alone will NOT give you v6 support.
+#
+#   pip install -r requirements-gpu.txt \
+#       -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+#
+# Match the cuXXX segment to your CUDA version (nvidia-smi). Verify with:
+#   python -c "import paddle; print(paddle.is_compiled_with_cuda())"
+#   ./run.sh --sanity-check
 paddlepaddle-gpu==3.2.2
 fastapi==0.109.0
 uvicorn[standard]==0.27.0

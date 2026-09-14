@@ -91,8 +91,11 @@ cd PaddleOCR/deploy/fastapi
 cd PaddleOCR/deploy/fastapi
 
 ./local_setup.sh --gpu                            # first time only
-USE_GPU=true ./run.sh --ocr-version v6 --model-size medium
+./run.sh --ocr-version v6 --model-size medium
 ```
+
+Then send `"device": "gpu"` with a request. There is no server-wide GPU switch:
+the device is chosen per request.
 
 ### DEEPX DX-M1 NPU
 
@@ -107,9 +110,13 @@ cd deepx && ./setup.sh && cd ..                   # download .dxnn models
 `run.sh` enables NPU support when the `dx_engine` runtime is importable; set
 `SETUP_NPU=true|false` to force it either way.
 
-> **NPU is chosen per request, not per server.** One server serves both: send
-> `"deepx": true` in the request body to run that request on the NPU, omit it to
-> run on CPU/GPU. `USE_GPU` and `deepx` are independent.
+> **The device is chosen per request, not per server.** One server serves all of
+> them: send `"device": "npu"` (or `"gpu"` / `"cpu"`) in the request body. Omit
+> it and the best available device is used, in the order **npu > gpu > cpu**.
+> Naming a device that this deployment cannot provide returns **503** rather
+> than quietly falling back, and every response reports `device_used`.
+>
+> Run `./run.sh --sanity-check` to see which devices are usable here.
 
 See the [DEEPX NPU Support Guide](docs/DEEPX_NPU_GUIDE.md) for details.
 
@@ -206,7 +213,7 @@ chmod +x local_setup.sh
 
 **Using environment variables:**
 ```bash
-PORT=9000 USE_GPU=true ./run.sh
+PORT=9000 ./run.sh --ocr-version v6 --model-size medium
 ```
 
 **Manual execution (using virtual environment directly):**
@@ -252,7 +259,7 @@ The service runs at http://localhost:8080
 **Environment variables:**
 - `PORT`: Service port
 - `HOST`: Binding host  
-- `USE_GPU`: Whether to use GPU (true/false)
+- ~~`USE_GPU`~~: **removed** - pass `"device": "gpu"` per request instead
 - `USE_MOBILE`: Whether to use Mobile model (true/false)
 
 #### 1.5 Server vs Mobile Models
@@ -363,7 +370,7 @@ docker run -d --gpus all -p 8081:8080 --name ocr-fastapi paddleocr-fastapi-servi
 **Setting environment variables:**
 ```bash
 docker run -d -p 8081:8080 \
-  -e USE_GPU=false \
+  -e OCR_VERSION=v6 \
   -e PORT=8080 \
   -e HOST=0.0.0.0 \
   --name ocr-fastapi \
@@ -594,7 +601,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
   -d "{
     \"file\": \"$IMAGE_BASE64\",
     \"fileType\": 1,
-    \"deepx\": true,
+    \"device\": \"npu\",
     \"sync\": false
   }"
 ```
@@ -688,7 +695,8 @@ Baidu AI Studio OCR API compatible endpoint. Supports both images and PDFs with 
 | `textDetUnclipRatio` | float | No | 1.5 | Text detection unclip ratio |
 | `textRecScoreThresh` | float | No | 0.0 | Text recognition score threshold |
 | `visualize` | bool | No | false | Return visualization images |
-| `deepx` | bool | No | false | Use DEEPX NPU for inference |
+| `device` | string | No | (auto) | `cpu` \| `gpu` \| `npu`. Omit to auto-select (npu > gpu > cpu) |
+| ~~`deepx`~~ | bool | No | - | **DEPRECATED** - use `device`. `true` maps to `device="npu"` |
 | `sync` | bool | No | false | Use sync NPU mode instead of async pipeline |
 | `inflight` | bool | No | false | Include detailed performance timing information |
 
@@ -719,7 +727,7 @@ Baidu AI Studio OCR API compatible endpoint. Supports both images and PDFs with 
 {
   "file": "base64_encoded_image_string",
   "fileType": 1,
-  "deepx": true,
+  "device": "npu",
   "sync": false
 }
 ```
@@ -858,7 +866,7 @@ openapi-generator generate -i openapi.json -g python -o ./client
 ### Local Environment
 In local environment, set directly in `ocr_service.py` file or via environment variables:
 ```bash
-export USE_GPU=false
+# USE_GPU is removed; select the device per request with "device"
 export PORT=8080
 export HOST=0.0.0.0
 python ocr_service.py
@@ -866,7 +874,7 @@ python ocr_service.py
 
 ### Docker Environment
 
-- `USE_GPU`: Whether to use GPU (true/false, default: false)
+- ~~`USE_GPU`~~: **removed** - pass `"device": "gpu"` per request instead
 - `PORT`: Service port (default: 8080)
 - `HOST`: Binding host (default: 0.0.0.0)
 

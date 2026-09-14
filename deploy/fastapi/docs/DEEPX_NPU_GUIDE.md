@@ -744,3 +744,47 @@ Docker injects the choice through the `OCR_VERSION` / `MODEL_SIZE` environment
 variables.
 
 > In v6, `s` means **small** (not server) and `m` means **medium** (not mobile).
+
+## Choosing the compute device
+
+The device is chosen **per request**, not per server, so one server can serve
+CPU, GPU and NPU traffic at once:
+
+```jsonc
+{"file": "...", "device": "npu"}   // cpu | gpu | npu
+{"file": "..."}                    // omit -> auto: npu > gpu > cpu
+```
+
+Naming a device this deployment cannot provide returns **503** with the list of
+devices that are available - it never falls back silently, because a quiet
+downgrade from npu to cpu looks like nothing more than a slow server.
+
+Every response reports what actually ran:
+
+```jsonc
+{"device_used": "npu", "device_requested": null, ...}
+```
+
+`USE_GPU` has been **removed**. It was process-wide, which made "this server
+uses the NPU, but run this request on the GPU" impossible to express. Setting it
+prints a deprecation notice and is ignored.
+
+`deepx` is **deprecated** but still works: `true` maps to `device="npu"`,
+`false` maps to auto-selection. Both print a notice.
+
+### Checking what is usable
+
+```bash
+./run.sh --sanity-check
+```
+
+Reports installed packages, which devices are usable (with the reason and fix
+when one is not), and which models are downloaded.
+
+### GPU support status
+
+The GPU path is implemented but **has not been verified with real inference**.
+PP-OCRv6 needs `paddlepaddle >= 3.2.2`, and `paddlepaddle-gpu` 3.x is published
+on Paddle's own wheel index rather than PyPI - PyPI stops at 2.6.2, which
+predates PP-OCRv6. If that index is unreachable from your network, GPU support
+cannot be installed; `--sanity-check` will report a CPU-only build.

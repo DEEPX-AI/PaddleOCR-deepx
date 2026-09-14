@@ -90,8 +90,11 @@ cd PaddleOCR/deploy/fastapi
 cd PaddleOCR/deploy/fastapi
 
 ./local_setup.sh --gpu                            # 최초 1회
-USE_GPU=true ./run.sh --ocr-version v6 --model-size medium
+./run.sh --ocr-version v6 --model-size medium
 ```
+
+그다음 요청에 `"device": "gpu"` 를 넣으면 됩니다. 서버 단위 GPU 스위치는 없습니다 —
+장치는 요청마다 선택합니다.
 
 ### DEEPX DX-M1 NPU
 
@@ -106,9 +109,13 @@ cd deepx && ./setup.sh && cd ..                   # .dxnn 모델 다운로드
 `run.sh` 는 `dx_engine` 런타임을 import 할 수 있으면 NPU 를 활성화합니다.
 강제하려면 `SETUP_NPU=true|false` 를 지정하세요.
 
-> **NPU 는 서버 단위가 아니라 요청 단위로 선택합니다.** 한 서버가 둘 다 처리합니다 —
-> 요청 본문에 `"deepx": true` 를 넣으면 그 요청만 NPU 로, 생략하면 CPU/GPU 로 돕니다.
-> `USE_GPU` 와 `deepx` 는 서로 독립입니다.
+> **장치는 서버 단위가 아니라 요청 단위로 선택합니다.** 한 서버가 전부 처리합니다 —
+> 요청 본문에 `"device": "npu"`(또는 `"gpu"` / `"cpu"`) 를 넣습니다. 생략하면
+> **npu > gpu > cpu** 순으로 가용한 장치가 선택됩니다. 이 배포가 제공할 수 없는 장치를
+> 지정하면 조용히 내려가지 않고 **503** 을 돌려주며, 모든 응답에 `device_used` 가
+> 포함됩니다.
+>
+> 어떤 장치를 쓸 수 있는지는 `./run.sh --sanity-check` 로 확인하세요.
 
 자세한 내용은 [DEEPX NPU 지원 가이드](docs/ko/DEEPX_NPU_GUIDE_ko.md) 를 참고하세요.
 
@@ -204,7 +211,7 @@ chmod +x local_setup.sh
 
 **환경 변수 사용:**
 ```bash
-PORT=9000 USE_GPU=true ./run.sh
+PORT=9000 ./run.sh --ocr-version v6 --model-size medium
 ```
 
 **수동 실행 (가상환경 직접 사용):**
@@ -250,7 +257,7 @@ venv/bin/python ocr_service.py
 **환경 변수:**
 - `PORT`: 서비스 포트
 - `HOST`: 바인딩 호스트  
-- `USE_GPU`: GPU 사용 여부 (true/false)
+- ~~`USE_GPU`~~: **제거됨** — 요청에 `"device": "gpu"` 를 넣으세요
 - `USE_MOBILE`: Mobile 모델 사용 여부 (true/false)
 
 #### 1.5 Server vs Mobile 모델
@@ -361,7 +368,7 @@ docker run -d --gpus all -p 8081:8080 --name ocr-fastapi paddleocr-fastapi-servi
 **환경 변수 설정:**
 ```bash
 docker run -d -p 8081:8080 \
-  -e USE_GPU=false \
+  -e OCR_VERSION=v6 \
   -e PORT=8080 \
   -e HOST=0.0.0.0 \
   --name ocr-fastapi \
@@ -592,7 +599,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
   -d "{
     \"file\": \"$IMAGE_BASE64\",
     \"fileType\": 1,
-    \"deepx\": true,
+    \"device\": \"npu\",
     \"sync\": false
   }"
 ```
@@ -717,7 +724,7 @@ Baidu AI Studio OCR API 호환 엔드포인트. 이미지와 PDF를 모두 지�
 {
   "file": "base64_encoded_image_string",
   "fileType": 1,
-  "deepx": true,
+  "device": "npu",
   "sync": false
 }
 ```
@@ -856,7 +863,7 @@ openapi-generator generate -i openapi.json -g python -o ./client
 ### 로컬 환경
 로컬에서는 `ocr_service.py` 파일에서 직접 설정하거나 환경 변수로 설정:
 ```bash
-export USE_GPU=false
+# USE_GPU 는 제거되었습니다. 요청의 "device" 로 장치를 선택하세요
 export PORT=8080
 export HOST=0.0.0.0
 python ocr_service.py
@@ -864,7 +871,7 @@ python ocr_service.py
 
 ### Docker 환경
 
-- `USE_GPU`: GPU 사용 여부 (true/false, 기본값: false)
+- ~~`USE_GPU`~~: **제거됨** — 요청에 `"device": "gpu"` 를 넣으세요
 - `PORT`: 서비스 포트 (기본값: 8080)
 - `HOST`: 바인딩 호스트 (기본값: 0.0.0.0)
 
