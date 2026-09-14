@@ -40,7 +40,14 @@ except:
     _default_thread_count = 4
 PDF_THREAD_COUNT = int(os.getenv('PDF_THREAD_COUNT', str(_default_thread_count)))  # PDF conversion thread count (for multi-core speedup)
 LAZY_LOAD = os.getenv('LAZY_LOAD', 'false').lower() == 'true'  # Load models on first request (true) or at startup (false)
-SETUP_NPU = os.getenv('SETUP_NPU', 'false').lower() == 'true'  # Enable NPU support (true) or CPU only (false)
+SETUP_NPU = os.getenv('SETUP_NPU', 'false').lower() == 'true'
+
+if os.getenv('USE_GPU') is not None:
+    # Removed in favour of the per-request `device` field: a process-wide GPU
+    # switch made "this server uses the NPU, but run this request on the GPU"
+    # impossible to express.
+    print("⚠️  USE_GPU is deprecated and ignored. Select the device per request "
+          "with device='gpu', or omit it to auto-select (npu > gpu > cpu).")  # Enable NPU support (true) or CPU only (false)
 
 # ============================================================================
 # OCR Pipeline Version (PP-OCRv5 / PP-OCRv6)
@@ -929,7 +936,8 @@ class BaiduOCRRequest(BaseModel):
     visualize: Optional[bool] = Field(False, description="Return visualization images")
     
     # DEEPX NPU support
-    deepx: Optional[bool] = Field(False, description="Use DEEPX NPU for inference (default: false, uses CPU)")
+    device: Optional[str] = Field(None, description="Compute device: cpu | gpu | npu. Omit to auto-select (npu > gpu > cpu).")
+    deepx: Optional[bool] = Field(None, description="DEPRECATED - use 'device' instead. true maps to device='npu'.")
     sync: Optional[bool] = Field(False, description="Use sync NPU PaddleOCR instead of async pipeline (default: false, uses AsyncPipelineOCR)")
     
     # Performance timing
@@ -941,7 +949,8 @@ class OCRRequest(BaseModel):
     url: Optional[str] = Field(None, description="Image URL")
     image: Optional[str] = Field(None, description="Base64 encoded image (single)")
     images: Optional[List[str]] = Field(None, description="Base64 encoded images (array) - hubserving format")
-    deepx: Optional[bool] = Field(False, description="Use DEEPX NPU for inference (default: false, uses CPU)")
+    device: Optional[str] = Field(None, description="Compute device: cpu | gpu | npu. Omit to auto-select (npu > gpu > cpu).")
+    deepx: Optional[bool] = Field(None, description="DEPRECATED - use 'device' instead. true maps to device='npu'.")
     sync: Optional[bool] = Field(False, description="Use sync NPU PaddleOCR instead of async pipeline (default: false, uses AsyncPipelineOCR)")
     
     # Preprocessing options (consistent defaults across all endpoints)
@@ -952,7 +961,8 @@ class OCRRequest(BaseModel):
 class BatchOCRRequest(BaseModel):
     """Batch OCR request with multiple base64 encoded images"""
     images: List[str] = Field(..., description="List of base64 encoded images")
-    deepx: Optional[bool] = Field(False, description="Use DEEPX NPU for inference (default: false, uses CPU)")
+    device: Optional[str] = Field(None, description="Compute device: cpu | gpu | npu. Omit to auto-select (npu > gpu > cpu).")
+    deepx: Optional[bool] = Field(None, description="DEPRECATED - use 'device' instead. true maps to device='npu'.")
     sync: Optional[bool] = Field(False, description="Use sync NPU PaddleOCR instead of async pipeline (default: false, uses AsyncPipelineOCR)")
     
     # Preprocessing options (consistent defaults across all endpoints)
@@ -985,6 +995,8 @@ class BaiduOCRResponse(BaseModel):
     logId: str = Field(..., description="Request UUID")
     errorCode: int = Field(0, description="Error code (0 = success)")
     errorMsg: str = Field("Success", description="Error message")
+    device_used: Optional[str] = Field(None, description="Compute device that ran this request: cpu | gpu | npu")
+    device_requested: Optional[str] = Field(None, description="Device asked for, or null when auto-selected")
     result: Dict[str, Any] = Field(..., description="OCR results")
 
 class OCRResponse(BaseModel):
@@ -1020,6 +1032,7 @@ app = FastAPI(
 ocr_instances = {}
 
 def get_ocr_instance(
+    compute_device: str = 'cpu',
     use_textline_orientation: bool = False,
     det_limit_side_len: int = 64,
     det_limit_type: str = "min",
@@ -1032,8 +1045,9 @@ def get_ocr_instance(
     Get or create PaddleOCR instance with specified parameters
     Uses caching to reuse instances with same parameters
     """
-    use_gpu = os.getenv('USE_GPU', 'false').lower() == 'true'
-    device = 'gpu:0' if use_gpu else 'cpu'
+    # Device comes from the request (see resolve_request_device). USE_GPU was a
+    # process-wide switch, which is why a per-request GPU choice was impossible.
+    device = 'gpu:0' if compute_device == 'gpu' else 'cpu'
     
     # Get model paths based on USE_MOBILE environment variable
     model_paths = get_model_paths()
@@ -1098,8 +1112,27 @@ def get_ocr_instance(
 # Default OCR instance (lazy loading)
 ocr = None
 
+def resolve_request_device(device, deepx):
+    """Reconcile the new `device` field with the deprecated `deepx` flag.
+
+    `device` always wins. `deepx=True` means the caller asked for the NPU.
+    `deepx=False` used to mean "CPU or GPU, whichever the server was started
+    with" - there is no server-wide setting any more, so it maps to
+    auto-selection rather than pinning CPU.
+    """
+    if device is not None:
+        return device
+    if deepx is True:
+        print("⚠️  'deepx' is deprecated; use device='npu' instead.")
+        return "npu"
+    if deepx is False:
+        print("⚠️  'deepx' is deprecated; omit it to auto-select a device, "
+              "or pass device='cpu' / 'gpu'.")
+    return None
+
+
 def get_ocr_engine(
-    deepx: bool = False,
+    device: str = None,
     sync: bool = False,
     use_doc_orientation: bool = False,
     use_doc_unwarping: bool = False,
@@ -1131,7 +1164,12 @@ def get_ocr_engine(
     Returns:
         OCR engine with predict(img) method
     """
-    if deepx:
+    # Resolve once per request: an explicit device must exist or the request
+    # fails; omitting it walks npu > gpu > cpu.
+    from device_selection import resolve_device
+    device = resolve_device(device)
+
+    if device == 'npu':
         # NPU path - return wrapped NPU OCR instance
         npu_ocr = get_npu_ocr_instance(
             sync=sync,
@@ -1145,8 +1183,9 @@ def get_ocr_engine(
         )
         return NPUOCRWrapper(npu_ocr)
     else:
-        # CPU path
+        # CPU / GPU path - the resolved device decides which
         return get_ocr_instance(
+            compute_device=device,
             use_textline_orientation=use_textline_orientation,
             det_limit_side_len=det_limit_side_len,
             det_limit_type=det_limit_type,
@@ -1158,7 +1197,8 @@ def get_ocr_engine(
 
 def process_images_with_ocr(
     imgs: Union[np.ndarray, List[np.ndarray]],
-    deepx: bool = False,
+    device: str = None,
+    deepx: bool = None,
     sync: bool = False,
     use_doc_orientation: bool = False,
     use_doc_unwarping: bool = False,
@@ -1203,7 +1243,7 @@ def process_images_with_ocr(
     
     # Get OCR engine (unified for CPU/NPU)
     ocr_engine = get_ocr_engine(
-        deepx=deepx,
+        device=resolve_request_device(device, deepx),
         sync=sync,
         use_doc_orientation=use_doc_orientation,
         use_doc_unwarping=use_doc_unwarping,
@@ -1725,6 +1765,18 @@ async def baidu_ocr(request: BaiduOCRRequest):
     
     Returns Baidu-compatible response format
     """
+    # Resolve the compute device once per request so the response and the
+    # timing breakdown below describe the device that actually ran.
+    from device_selection import DeviceError as _DeviceError
+    from device_selection import resolve_device as _resolve_device
+    try:
+        _resolved_device = _resolve_device(
+            resolve_request_device(getattr(request, 'device', None),
+                                   getattr(request, 'deepx', None)))
+    except _DeviceError as _exc:
+        # 503: the request named a device this deployment cannot provide.
+        raise HTTPException(status_code=503, detail=str(_exc))
+
     try:
         # Generate request ID
         log_id = str(uuid.uuid4())
@@ -1802,7 +1854,7 @@ async def baidu_ocr(request: BaiduOCRRequest):
         ocr_start_time = time.time()
         all_results = process_images_with_ocr(
             imgs=images_to_process,  # Process all pages at once
-            deepx=request.deepx,
+            device=_resolved_device,
             sync=request.sync,
             use_doc_orientation=request.useDocOrientationClassify,
             use_doc_unwarping=request.useDocUnwarping,
@@ -1942,10 +1994,10 @@ async def baidu_ocr(request: BaiduOCRRequest):
                 # Detailed OCR stage breakdown (sum of all pages)
                 # Note: CPU doesn't support per-stage timing, values will be 0
                 'ocrStages': {
-                    'docOrientationMs': round(total_doc_ori_ms, 2) if request.deepx and request.useDocOrientationClassify else (None if not request.useDocOrientationClassify else 0),
-                    'docUnwarpingMs': round(total_doc_uv_ms, 2) if request.deepx and request.useDocUnwarping else (None if not request.useDocUnwarping else 0),
+                    'docOrientationMs': round(total_doc_ori_ms, 2) if _resolved_device == 'npu' and request.useDocOrientationClassify else (None if not request.useDocOrientationClassify else 0),
+                    'docUnwarpingMs': round(total_doc_uv_ms, 2) if _resolved_device == 'npu' and request.useDocUnwarping else (None if not request.useDocUnwarping else 0),
                     'detectionMs': round(total_det_ms, 2) if request.deepx else 0,
-                    'textlineOrientationMs': round(total_cls_ms, 2) if request.deepx and request.useTextlineOrientation else (None if not request.useTextlineOrientation else 0),
+                    'textlineOrientationMs': round(total_cls_ms, 2) if _resolved_device == 'npu' and request.useTextlineOrientation else (None if not request.useTextlineOrientation else 0),
                     'recognitionMs': round(total_rec_ms, 2) if request.deepx else 0
                 },
                 'perPage': {
@@ -1955,14 +2007,14 @@ async def baidu_ocr(request: BaiduOCRRequest):
                     'formattingSec': round(per_page_format_time, 3),
                     # Per-page OCR stage breakdown (average)
                     # Note: CPU doesn't support per-stage timing, values will be 0
-                    'docOrientationMs': round(total_doc_ori_ms / len(images_to_process), 2) if request.deepx and request.useDocOrientationClassify and len(images_to_process) > 0 else (None if not request.useDocOrientationClassify else 0),
-                    'docUnwarpingMs': round(total_doc_uv_ms / len(images_to_process), 2) if request.deepx and request.useDocUnwarping and len(images_to_process) > 0 else (None if not request.useDocUnwarping else 0),
-                    'detectionMs': round(total_det_ms / len(images_to_process), 2) if request.deepx and len(images_to_process) > 0 else 0,
-                    'textlineOrientationMs': round(total_cls_ms / len(images_to_process), 2) if request.deepx and request.useTextlineOrientation and len(images_to_process) > 0 else (None if not request.useTextlineOrientation else 0),
-                    'recognitionMs': round(total_rec_ms / len(images_to_process), 2) if request.deepx and len(images_to_process) > 0 else 0
+                    'docOrientationMs': round(total_doc_ori_ms / len(images_to_process), 2) if _resolved_device == 'npu' and request.useDocOrientationClassify and len(images_to_process) > 0 else (None if not request.useDocOrientationClassify else 0),
+                    'docUnwarpingMs': round(total_doc_uv_ms / len(images_to_process), 2) if _resolved_device == 'npu' and request.useDocUnwarping and len(images_to_process) > 0 else (None if not request.useDocUnwarping else 0),
+                    'detectionMs': round(total_det_ms / len(images_to_process), 2) if _resolved_device == 'npu' and len(images_to_process) > 0 else 0,
+                    'textlineOrientationMs': round(total_cls_ms / len(images_to_process), 2) if _resolved_device == 'npu' and request.useTextlineOrientation and len(images_to_process) > 0 else (None if not request.useTextlineOrientation else 0),
+                    'recognitionMs': round(total_rec_ms / len(images_to_process), 2) if _resolved_device == 'npu' and len(images_to_process) > 0 else 0
                 },
                 'pageCount': len(images_to_process),
-                'backend': 'NPU' if request.deepx else 'CPU',
+                'backend': _resolved_device.upper(),
                 'mode': 'sync' if request.sync else 'async',
                 'pdfDpi': PDF_DPI if request.fileType == 0 else None,
                 'pdfThreadCount': PDF_THREAD_COUNT if request.fileType == 0 else None
@@ -1970,6 +2022,8 @@ async def baidu_ocr(request: BaiduOCRRequest):
         
         # Build response
         response = BaiduOCRResponse(
+            device_used=_resolved_device,
+            device_requested=request.device or ('npu' if request.deepx else None),
             logId=log_id,
             errorCode=0,
             errorMsg="Success",
@@ -2012,6 +2066,18 @@ async def ocr_image(request: OCRRequest):
     Note: OCR engine is selected dynamically based on request.deepx parameter
     No pre-initialization needed - get_ocr_engine() handles lazy loading
     """
+    # Resolve the compute device once per request so the response describes
+    # the device that actually ran.
+    from device_selection import DeviceError as _DeviceError
+    from device_selection import resolve_device as _resolve_device
+    try:
+        _resolved_device = _resolve_device(
+            resolve_request_device(getattr(request, 'device', None),
+                                   getattr(request, 'deepx', None)))
+    except _DeviceError as _exc:
+        # 503: the request named a device this deployment cannot provide.
+        raise HTTPException(status_code=503, detail=str(_exc))
+
     try:
         # Extract images from request
         imgs = []
@@ -2048,7 +2114,7 @@ async def ocr_image(request: OCRRequest):
         # Process images - all batch/single logic handled inside predict()
         results = process_images_with_ocr(
             imgs,
-            deepx=request.deepx,
+            device=_resolved_device,
             sync=request.sync,
             use_doc_orientation=request.useDocOrientationClassify,
             use_doc_unwarping=request.useDocUnwarping,
@@ -2080,7 +2146,8 @@ async def ocr_image(request: OCRRequest):
         )
 
 @app.post('/fastapi/ocr/upload', response_model=OCRResponse, responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}}, tags=["FastAPI OCR"])
-async def ocr_upload(file: UploadFile = File(...), deepx: bool = Form(False), sync: bool = Form(False)):
+async def ocr_upload(file: UploadFile = File(...), device: str = Form(None),
+                     deepx: bool = Form(None), sync: bool = Form(False)):
     """
     FastAPI OCR endpoint for file upload
     
@@ -2106,7 +2173,7 @@ async def ocr_upload(file: UploadFile = File(...), deepx: bool = Form(False), sy
         # Run OCR inference (unified interface)
         results = process_images_with_ocr(
             img,
-            deepx=deepx,
+            device=resolve_request_device(device, deepx),
             sync=sync
         )
         
@@ -2148,6 +2215,18 @@ async def predict_ocr_system(request: OCRRequest):
     Note: OCR engine is selected dynamically based on request.deepx parameter
     No pre-initialization needed - get_ocr_engine() handles lazy loading
     """
+    # Resolve the compute device once per request so the response describes
+    # the device that actually ran.
+    from device_selection import DeviceError as _DeviceError
+    from device_selection import resolve_device as _resolve_device
+    try:
+        _resolved_device = _resolve_device(
+            resolve_request_device(getattr(request, 'device', None),
+                                   getattr(request, 'deepx', None)))
+    except _DeviceError as _exc:
+        # 503: the request named a device this deployment cannot provide.
+        raise HTTPException(status_code=503, detail=str(_exc))
+
     try:
         # Extract images from request
         imgs = []
@@ -2185,7 +2264,7 @@ async def predict_ocr_system(request: OCRRequest):
         # Process images - all batch/single logic handled inside predict()
         results = process_images_with_ocr(
             imgs,
-            deepx=request.deepx,
+            device=_resolved_device,
             sync=request.sync,
             use_doc_orientation=request.useDocOrientationClassify,
             use_doc_unwarping=request.useDocUnwarping,
@@ -2226,6 +2305,18 @@ async def batch_ocr(request: BatchOCRRequest):
     Note: OCR engine is selected dynamically based on request.deepx parameter
     No pre-initialization needed - get_ocr_engine() handles lazy loading
     """
+    # Resolve the compute device once per request so the response describes
+    # the device that actually ran.
+    from device_selection import DeviceError as _DeviceError
+    from device_selection import resolve_device as _resolve_device
+    try:
+        _resolved_device = _resolve_device(
+            resolve_request_device(getattr(request, 'device', None),
+                                   getattr(request, 'deepx', None)))
+    except _DeviceError as _exc:
+        # 503: the request named a device this deployment cannot provide.
+        raise HTTPException(status_code=503, detail=str(_exc))
+
     try:
         if not request.images:
             raise HTTPException(status_code=400, detail="No images provided")
@@ -2242,7 +2333,7 @@ async def batch_ocr(request: BatchOCRRequest):
         # Process all images using unified interface
         results = process_images_with_ocr(
             imgs,
-            deepx=request.deepx,
+            device=_resolved_device,
             sync=request.sync,
             use_doc_orientation=request.useDocOrientationClassify,
             use_doc_unwarping=request.useDocUnwarping,

@@ -40,6 +40,10 @@ while [[ $# -gt 0 ]]; do
             HOST="$2"
             shift 2
             ;;
+        --sanity-check|--doctor)
+            "$VENV_DIR/bin/python" "$SCRIPT_DIR/device_selection.py" --report
+            exit 0
+            ;;
         --ocr-version)
             OCR_VERSION_OPT="$2"
             shift 2
@@ -101,6 +105,7 @@ while [[ $# -gt 0 ]]; do
             echo -e "  ${GREEN}--ocr-version${NC}    ${YELLOW}v5 | v6${NC} (required with --model-size)"
             echo -e "  ${GREEN}--model-size${NC}     ${YELLOW}v6: medium|small|tiny   v5: server|mobile${NC}"
             echo -e "  ${GREEN}--no-interactive${NC} ${YELLOW}Never prompt; the model must be specified${NC}"
+            echo -e "  ${GREEN}--sanity-check${NC}   ${YELLOW}Report installed packages, usable devices and models, then exit${NC}"
             echo -e ""
             echo -e "  ${YELLOW}Omit both --ocr-version and --model-size to choose interactively.${NC}"
             echo -e "  ${YELLOW}Giving only one of them is an error.${NC}"
