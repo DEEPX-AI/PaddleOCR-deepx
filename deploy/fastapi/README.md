@@ -97,6 +97,14 @@ cd PaddleOCR/deploy/fastapi
 Then send `"device": "gpu"` with a request. There is no server-wide GPU switch:
 the device is chosen per request.
 
+`paddlepaddle-gpu` is not on PyPI - `local_setup.sh --gpu` installs it from
+Paddle's index. Verified on an RTX 5060 Ti / CUDA 13.0: v6/medium runs in
+**0.10 s** per page versus 1.45 s on CPU.
+
+> A GPU install cannot serve `device: "cpu"` - paddlepaddle-gpu 3.3.0 fails on
+> CPU inference (a Paddle issue, not a service one). See the
+> [NPU guide](docs/DEEPX_NPU_GUIDE.md#gpu-install-verified-2026-09-15).
+
 ### DEEPX DX-M1 NPU
 
 ```bash

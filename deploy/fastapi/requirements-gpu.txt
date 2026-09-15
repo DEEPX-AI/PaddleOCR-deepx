@@ -1,14 +1,32 @@
-# GPU build. paddlepaddle-gpu 3.x is NOT on PyPI - it lives on Paddle's own
-# wheel index, which some corporate networks block. PyPI stops at 2.6.2, which
-# predates PP-OCRv6, so installing from PyPI alone will NOT give you v6 support.
+# GPU build.
+#
+# paddlepaddle-gpu 3.x is NOT on PyPI - it lives on Paddle's own wheel index:
 #
 #   pip install -r requirements-gpu.txt \
-#       -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+#       -i https://www.paddlepaddle.org.cn/packages/stable/cu130/
 #
-# Match the cuXXX segment to your CUDA version (nvidia-smi). Verify with:
-#   python -c "import paddle; print(paddle.is_compiled_with_cuda())"
+# Match the cuXXX segment to your CUDA version (nvidia-smi). The 15 nvidia-*
+# CUDA runtime packages it depends on DO come from PyPI, so an offline bundle
+# of the paddlepaddle-gpu wheel alone is not enough - keep PyPI reachable, or
+# mirror those too.
+#
+# Verified 2026-09-15 on RTX 5060 Ti / CUDA 13.0 / Python 3.12 with
+# paddlepaddle-gpu 3.3.0: GPU inference works for v5 and all three v6 sizes
+# (0.06-0.13 s/image).
+#
+# KNOWN ISSUE - this build cannot run on CPU. With paddlepaddle-gpu 3.3.0,
+# device="cpu" raises:
+#     NotImplementedError: (Unimplemented) ConvertPirAttribute2RuntimeAttribute
+#     not support [pir::ArrayAttribute<...>]
+# It reproduces with plain paddleocr, without this service, and does not happen
+# on the CPU build (paddlepaddle 3.2.2). So a GPU install serves gpu and npu
+# but NOT cpu. Use the CPU requirements if you need CPU inference.
+#
+# Verify:
+#   python -c "import paddle; paddle.utils.run_check()"
 #   ./run.sh --sanity-check
-paddlepaddle-gpu==3.2.2
+
+paddlepaddle-gpu==3.3.0
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6

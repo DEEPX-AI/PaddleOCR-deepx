@@ -787,3 +787,32 @@ GPU 경로는 구현되어 있으나 **실제 추론으로 검증되지 않았�
 자체 휠 인덱스에 배포됩니다 — PyPI 는 2.6.2 에서 멈춰 있고 이는 PP-OCRv6 이전
 버전입니다. 사내망에서 해당 인덱스가 막혀 있으면 GPU 지원을 설치할 수 없으며,
 `--sanity-check` 가 CPU 전용 빌드로 보고합니다.
+
+### GPU 설치 (2026-09-15 검증)
+
+`paddlepaddle-gpu` 3.x 는 PyPI 에 없습니다. Paddle 자체 인덱스에서 설치합니다:
+
+```bash
+pip install -r requirements-gpu.txt \
+    -i https://www.paddlepaddle.org.cn/packages/stable/cu130/
+python -c "import paddle; paddle.utils.run_check()"   # "works well on 1 GPU"
+```
+
+`cuXXX` 는 `nvidia-smi` 의 CUDA 버전에 맞춥니다. `paddlepaddle_gpu` 휠만 offline 으로
+받아서는 부족합니다 — `nvidia-*` CUDA 런타임 15개를 함께 요구하며 이들은 PyPI 에서
+받습니다.
+
+RTX 5060 Ti (CUDA 13.0, paddlepaddle-gpu 3.3.0) 에서 warm 상태 1장 기준 실측:
+
+| 선택 | GPU | CPU |
+|---|---|---|
+| v5 / server | 0.13 s | 1.77 s |
+| v6 / medium | 0.10 s | 1.45 s |
+| v6 / small | 0.07 s | 0.86 s |
+| v6 / tiny | 0.06 s | 0.64 s |
+
+> **GPU 설치본은 `device: "cpu"` 를 처리할 수 없습니다.** paddlepaddle-gpu 3.3.0 은 CPU
+> 추론 시 `NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support` 를
+> 냅니다. 이 서비스 없이 순수 paddleocr 로도 재현되므로 Paddle 쪽 문제이며, CPU
+> 빌드(paddlepaddle 3.2.2)에서는 발생하지 않습니다. 따라서 GPU 배포는 `gpu` 와 `npu` 를
+> 제공하고, `cpu` 가 필요하면 CPU requirements 로 설치해야 합니다.

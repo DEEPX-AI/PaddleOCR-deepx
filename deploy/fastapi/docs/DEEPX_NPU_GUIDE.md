@@ -788,3 +788,33 @@ PP-OCRv6 needs `paddlepaddle >= 3.2.2`, and `paddlepaddle-gpu` 3.x is published
 on Paddle's own wheel index rather than PyPI - PyPI stops at 2.6.2, which
 predates PP-OCRv6. If that index is unreachable from your network, GPU support
 cannot be installed; `--sanity-check` will report a CPU-only build.
+
+### GPU install (verified 2026-09-15)
+
+`paddlepaddle-gpu` 3.x is not on PyPI; install from Paddle's index:
+
+```bash
+pip install -r requirements-gpu.txt \
+    -i https://www.paddlepaddle.org.cn/packages/stable/cu130/
+python -c "import paddle; paddle.utils.run_check()"   # "works well on 1 GPU"
+```
+
+Match `cuXXX` to `nvidia-smi`. An offline copy of the `paddlepaddle_gpu` wheel
+alone is not sufficient - it pulls 15 `nvidia-*` CUDA runtime packages, and
+those come from PyPI.
+
+Measured on an RTX 5060 Ti (CUDA 13.0, paddlepaddle-gpu 3.3.0), warm, one page:
+
+| Selection | GPU | CPU |
+|---|---|---|
+| v5 / server | 0.13 s | 1.77 s |
+| v6 / medium | 0.10 s | 1.45 s |
+| v6 / small | 0.07 s | 0.86 s |
+| v6 / tiny | 0.06 s | 0.64 s |
+
+> **A GPU install cannot serve `device: "cpu"`.** paddlepaddle-gpu 3.3.0 raises
+> `NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support` on CPU
+> inference. It reproduces with plain paddleocr, so it is a Paddle issue rather
+> than a service one, and it does not occur on the CPU build (paddlepaddle
+> 3.2.2). A GPU deployment therefore serves `gpu` and `npu`; install the CPU
+> requirements if you need `cpu`.

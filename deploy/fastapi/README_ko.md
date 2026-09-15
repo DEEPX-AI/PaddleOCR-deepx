@@ -96,6 +96,14 @@ cd PaddleOCR/deploy/fastapi
 그다음 요청에 `"device": "gpu"` 를 넣으면 됩니다. 서버 단위 GPU 스위치는 없습니다 —
 장치는 요청마다 선택합니다.
 
+`paddlepaddle-gpu` 는 PyPI 에 없어 `local_setup.sh --gpu` 가 Paddle 인덱스에서
+설치합니다. RTX 5060 Ti / CUDA 13.0 에서 검증했으며, v6/medium 이 페이지당
+**0.10 초** 로 CPU(1.45 초) 대비 크게 빠릅니다.
+
+> GPU 설치본은 `device: "cpu"` 를 처리할 수 없습니다 — paddlepaddle-gpu 3.3.0 이 CPU
+> 추론에서 실패합니다 (이 서비스가 아니라 Paddle 쪽 문제). 자세한 내용은
+> [NPU 가이드](docs/ko/DEEPX_NPU_GUIDE_ko.md) 참고.
+
 ### DEEPX DX-M1 NPU
 
 ```bash
