@@ -5,28 +5,36 @@
 #   pip install -r requirements-gpu.txt \
 #       -i https://www.paddlepaddle.org.cn/packages/stable/cu130/
 #
-# Match the cuXXX segment to your CUDA version (nvidia-smi). The 15 nvidia-*
+# Match the cuXXX segment to your CUDA version (nvidia-smi). The nvidia-*
 # CUDA runtime packages it depends on DO come from PyPI, so an offline bundle
 # of the paddlepaddle-gpu wheel alone is not enough - keep PyPI reachable, or
 # mirror those too.
 #
-# Verified 2026-09-15 on RTX 5060 Ti / CUDA 13.0 / Python 3.12 with
-# paddlepaddle-gpu 3.3.0: GPU inference works for v5 and all three v6 sizes
-# (0.06-0.13 s/image).
+# Verified 2026-09-15 on RTX 5060 Ti / CUDA 13.0 / Python 3.12. Both 3.2.2 and
+# 3.3.0 run GPU inference for v5 and all three v6 sizes. 3.2.2 is pinned here
+# because it ALSO serves device=cpu; 3.3.0 does not:
 #
-# KNOWN ISSUE - this build cannot run on CPU. With paddlepaddle-gpu 3.3.0,
-# device="cpu" raises:
+#   paddlepaddle-gpu 3.3.0, device="cpu":
 #     NotImplementedError: (Unimplemented) ConvertPirAttribute2RuntimeAttribute
 #     not support [pir::ArrayAttribute<...>]
-# It reproduces with plain paddleocr, without this service, and does not happen
-# on the CPU build (paddlepaddle 3.2.2). So a GPU install serves gpu and npu
-# but NOT cpu. Use the CPU requirements if you need CPU inference.
+#
+# It reproduces with plain paddleocr, without this service, and not on 3.2.2 -
+# a Paddle-side regression. Pinning 3.2.2 keeps one install able to serve cpu,
+# gpu and npu, which is what the auto device fallback (npu -> gpu -> cpu)
+# assumes, and matches the CPU requirements.txt pin.
+#
+# One wrinkle: 3.2.2's libpaddle.so has a RUNPATH for the old split CUDA
+# layout (nvidia/cuda_nvrtc/lib, ...) while the CUDA 13 wheels install under
+# nvidia/cu13/lib, so a bare `import paddle` fails with
+#     ImportError: libnvrtc.so.13: cannot open shared object file
+# run.sh adds that directory to LD_LIBRARY_PATH automatically. Outside run.sh:
+#   export LD_LIBRARY_PATH="$(python -c 'import nvidia,os;print(os.path.dirname(nvidia.__file__))')/cu13/lib:$LD_LIBRARY_PATH"
 #
 # Verify:
 #   python -c "import paddle; paddle.utils.run_check()"
 #   ./run.sh --sanity-check
 
-paddlepaddle-gpu==3.3.0
+paddlepaddle-gpu==3.2.2
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6

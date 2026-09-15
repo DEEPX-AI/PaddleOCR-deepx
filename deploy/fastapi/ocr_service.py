@@ -57,11 +57,34 @@ def get_ocr_version():
     """
     OCR pipeline version selected by the OCR_VERSION environment variable.
 
-    Returns 'v5' (default, backward compatible) or 'v6'. Any unrecognised value
-    falls back to 'v5' so an existing deployment never breaks on a typo.
+    Returns 'v6' (default) or 'v5'. This default must match
+    model_selection.DEFAULT_VERSION: run.sh resolves the version through that
+    module, but anything bypassing it - `uvicorn ocr_service:app`, importing
+    this module, a request arriving before the variable is set - lands here,
+    and the two defaults disagreeing meant one deployment served different
+    models depending on how it was started.
+
+    An unrecognised value falls back to the default rather than raising, so a
+    typo degrades to documented behaviour instead of breaking startup.
     """
-    version = os.getenv('OCR_VERSION', 'v5').lower()
-    return version if version in ('v5', 'v6') else 'v5'
+    version = os.getenv('OCR_VERSION', 'v6').lower()
+    return version if version in ('v5', 'v6') else 'v6'
+
+
+def v6_models_missing_message(v6_dir):
+    """What to tell an operator whose host has no PP-OCRv6 .dxnn files.
+
+    Mirrors how v5 handles absent models: no silent download, no silent
+    fallback - say what is missing, how to fetch it, and how to opt out.
+    """
+    return (
+        f"PP-OCRv6 NPU models not found at {v6_dir}.\n"
+        f"Download them with:\n"
+        f"    cd deploy/fastapi/deepx && ./setup.sh\n"
+        f"then restart the service.\n"
+        f"To use PP-OCRv5 instead, start with OCR_VERSION=v5 "
+        f"(or --ocr-version v5 --model-size server)."
+    )
 
 
 def get_v6_model_dir(deepx_path):
@@ -213,12 +236,7 @@ def load_npu_models_once():
     if ocr_version == 'v6':
         v6_dir = get_v6_model_dir(deepx_path)
         if not v6_dir.exists():
-            error_msg = (
-                f"OCR_VERSION=v6 requested but the v6 model directory was not found: {v6_dir}. "
-                f"Place det_v6_{{t,s,m}}_640.dxnn, rec_v6_{{t,s,m}}_ratio_5.dxnn and the "
-                f"matching dictionary (rec_v6_<size>_dict.txt or ppocrv6_dict.txt) "
-                f"there (see deepx/setup.sh), or unset OCR_VERSION to use v5."
-            )
+            error_msg = v6_models_missing_message(v6_dir)
             print(f"❌ {error_msg}")
             raise HTTPException(status_code=503, detail=error_msg)
 

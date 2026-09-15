@@ -73,7 +73,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
   -d '{
     "file": "'$(base64 -w 0 test.jpg)'",
     "fileType": 1,
-    "deepx": true
+    "device": "npu"
   }'
 ```
 
@@ -344,7 +344,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
   -d '{
     "file": "'$(base64 -w 0 test.jpg)'",
     "fileType": 1,
-    "deepx": true
+    "device": "npu"
   }'
 ```
 
@@ -356,7 +356,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
   -d '{
     "file": "'$(base64 -w 0 test.jpg)'",
     "fileType": 1,
-    "deepx": true,
+    "device": "npu",
     "sync": true
   }'
 ```
@@ -386,7 +386,7 @@ response = requests.post(
     json={
         "file": img_base64,
         "fileType": 1,
-        "deepx": True
+        "device": "npu"
     }
 )
 
@@ -396,7 +396,7 @@ response = requests.post(
     json={
         "file": img_base64,
         "fileType": 1,
-        "deepx": True,
+        "device": "npu",
         "sync": True
     }
 )
@@ -782,7 +782,8 @@ CPU 첫 추론은 모델을 내려받느라 수 분이 걸릴 수 있습니다. 
 
 ### GPU 지원 현황
 
-GPU 경로는 구현되어 있으나 **실제 추론으로 검증되지 않았습니다.** PP-OCRv6 는
+2026-09-15 에 실제 추론으로 검증했습니다 (RTX 5060 Ti, CUDA 13.0, Python 3.12).
+PP-OCRv6 는
 `paddlepaddle >= 3.2.2` 가 필요한데, `paddlepaddle-gpu` 3.x 는 PyPI 가 아니라 Paddle
 자체 휠 인덱스에 배포됩니다 — PyPI 는 2.6.2 에서 멈춰 있고 이는 PP-OCRv6 이전
 버전입니다. 사내망에서 해당 인덱스가 막혀 있으면 GPU 지원을 설치할 수 없으며,
@@ -799,20 +800,31 @@ python -c "import paddle; paddle.utils.run_check()"   # "works well on 1 GPU"
 ```
 
 `cuXXX` 는 `nvidia-smi` 의 CUDA 버전에 맞춥니다. `paddlepaddle_gpu` 휠만 offline 으로
-받아서는 부족합니다 — `nvidia-*` CUDA 런타임 15개를 함께 요구하며 이들은 PyPI 에서
+받아서는 부족합니다 — `nvidia-*` CUDA 런타임 패키지를 함께 요구하며 이들은 PyPI 에서
 받습니다.
 
-RTX 5060 Ti (CUDA 13.0, paddlepaddle-gpu 3.3.0) 에서 warm 상태 1장 기준 실측:
+RTX 5060 Ti (CUDA 13.0, paddlepaddle-gpu 3.2.2) 에서 이 서비스의 실제 코드 경로로,
+warm 상태 1장 3회 중 최소값 실측:
 
 | 선택 | GPU | CPU |
 |---|---|---|
-| v5 / server | 0.13 s | 1.77 s |
-| v6 / medium | 0.10 s | 1.45 s |
-| v6 / small | 0.07 s | 0.86 s |
-| v6 / tiny | 0.06 s | 0.64 s |
+| v5 / server | 0.093 s | 1.425 s |
+| v6 / medium | 0.051 s | 0.921 s |
+| v6 / small | 0.036 s | 0.732 s |
+| v6 / tiny | 0.034 s | 0.815 s |
 
-> **GPU 설치본은 `device: "cpu"` 를 처리할 수 없습니다.** paddlepaddle-gpu 3.3.0 은 CPU
-> 추론 시 `NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support` 를
-> 냅니다. 이 서비스 없이 순수 paddleocr 로도 재현되므로 Paddle 쪽 문제이며, CPU
-> 빌드(paddlepaddle 3.2.2)에서는 발생하지 않습니다. 따라서 GPU 배포는 `gpu` 와 `npu` 를
-> 제공하고, `cpu` 가 필요하면 CPU requirements 로 설치해야 합니다.
+CPU 열도 같은 GPU 설치본에서 측정한 값입니다. 3.2.2 는 하나의 환경에서 `cpu`, `gpu`,
+`npu` 를 모두 제공하며, 이는 자동 fallback (npu → gpu → cpu) 이 전제하는 조건입니다.
+
+> **paddlepaddle-gpu 3.3.0 으로 올리지 마십시오.** GPU 추론은 되지만 `device: "cpu"` 가
+> `NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support` 로 실패합니다.
+> 이 서비스 없이 순수 paddleocr 로도 재현되므로 Paddle 쪽 regression 이며 3.2.2 는
+> 영향이 없습니다. `requirements-gpu.txt` 가 3.2.2 로 고정된 이유입니다.
+
+> **`import paddle` 이 `ImportError: libnvrtc.so.13` 으로 실패한다면?** 3.2.2 의
+> `libpaddle.so` 는 구형 분리 CUDA 레이아웃(`nvidia/cuda_nvrtc/lib`) 기준 RUNPATH 를
+> 갖는데, CUDA 13 휠은 전부 `nvidia/cu13/lib` 아래에 설치됩니다. `run.sh` 는 이 경로를
+> `LD_LIBRARY_PATH` 에 자동으로 추가합니다. `run.sh` 밖에서는 직접 지정하십시오:
+> ```bash
+> export LD_LIBRARY_PATH="$(python -c 'import nvidia,os;print(os.path.dirname(nvidia.__file__))')/cu13/lib:$LD_LIBRARY_PATH"
+> ```

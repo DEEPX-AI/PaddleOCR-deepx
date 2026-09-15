@@ -73,7 +73,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
   -d '{
     "file": "'$(base64 -w 0 test.jpg)'",
     "fileType": 1,
-    "deepx": true
+    "device": "npu"
   }'
 ```
 
@@ -344,7 +344,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
   -d '{
     "file": "'$(base64 -w 0 test.jpg)'",
     "fileType": 1,
-    "deepx": true
+    "device": "npu"
   }'
 ```
 
@@ -356,7 +356,7 @@ curl -X POST http://localhost:8080/api/v1/ocr \
   -d '{
     "file": "'$(base64 -w 0 test.jpg)'",
     "fileType": 1,
-    "deepx": true,
+    "device": "npu",
     "sync": true
   }'
 ```
@@ -386,7 +386,7 @@ response = requests.post(
     json={
         "file": img_base64,
         "fileType": 1,
-        "deepx": True
+        "device": "npu"
     }
 )
 
@@ -396,7 +396,7 @@ response = requests.post(
     json={
         "file": img_base64,
         "fileType": 1,
-        "deepx": True,
+        "device": "npu",
         "sync": True
     }
 )
@@ -783,11 +783,11 @@ when one is not), and which models are downloaded.
 
 ### GPU support status
 
-The GPU path is implemented but **has not been verified with real inference**.
-PP-OCRv6 needs `paddlepaddle >= 3.2.2`, and `paddlepaddle-gpu` 3.x is published
-on Paddle's own wheel index rather than PyPI - PyPI stops at 2.6.2, which
-predates PP-OCRv6. If that index is unreachable from your network, GPU support
-cannot be installed; `--sanity-check` will report a CPU-only build.
+Verified with real inference on 2026-09-15 (RTX 5060 Ti, CUDA 13.0, Python
+3.12). PP-OCRv6 needs `paddlepaddle >= 3.2.2`, and `paddlepaddle-gpu` 3.x is
+published on Paddle's own wheel index rather than PyPI - PyPI stops at 2.6.2,
+which predates PP-OCRv6. If that index is unreachable from your network, GPU
+support cannot be installed; `--sanity-check` will report a CPU-only build.
 
 ### GPU install (verified 2026-09-15)
 
@@ -800,21 +800,35 @@ python -c "import paddle; paddle.utils.run_check()"   # "works well on 1 GPU"
 ```
 
 Match `cuXXX` to `nvidia-smi`. An offline copy of the `paddlepaddle_gpu` wheel
-alone is not sufficient - it pulls 15 `nvidia-*` CUDA runtime packages, and
+alone is not sufficient - it pulls the `nvidia-*` CUDA runtime packages, and
 those come from PyPI.
 
-Measured on an RTX 5060 Ti (CUDA 13.0, paddlepaddle-gpu 3.3.0), warm, one page:
+Measured on an RTX 5060 Ti (CUDA 13.0, paddlepaddle-gpu 3.2.2) through this
+service's own code path, warm, best of three on one page:
 
 | Selection | GPU | CPU |
 |---|---|---|
-| v5 / server | 0.13 s | 1.77 s |
-| v6 / medium | 0.10 s | 1.45 s |
-| v6 / small | 0.07 s | 0.86 s |
-| v6 / tiny | 0.06 s | 0.64 s |
+| v5 / server | 0.093 s | 1.425 s |
+| v6 / medium | 0.051 s | 0.921 s |
+| v6 / small | 0.036 s | 0.732 s |
+| v6 / tiny | 0.034 s | 0.815 s |
 
-> **A GPU install cannot serve `device: "cpu"`.** paddlepaddle-gpu 3.3.0 raises
-> `NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support` on CPU
-> inference. It reproduces with plain paddleocr, so it is a Paddle issue rather
-> than a service one, and it does not occur on the CPU build (paddlepaddle
-> 3.2.2). A GPU deployment therefore serves `gpu` and `npu`; install the CPU
-> requirements if you need `cpu`.
+The CPU column comes from the same GPU install: 3.2.2 serves `cpu`, `gpu` and
+`npu` from one environment, which is what the auto fallback (npu -> gpu -> cpu)
+needs.
+
+> **Do not upgrade to paddlepaddle-gpu 3.3.0.** GPU inference works there, but
+> `device: "cpu"` raises
+> `NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support`. It
+> reproduces with plain paddleocr, so it is a Paddle regression rather than a
+> service one, and 3.2.2 is unaffected. `requirements-gpu.txt` pins 3.2.2 for
+> this reason.
+
+> **`import paddle` failing with `ImportError: libnvrtc.so.13`?** 3.2.2's
+> `libpaddle.so` carries a RUNPATH for the old split CUDA layout
+> (`nvidia/cuda_nvrtc/lib`), while the CUDA 13 wheels install everything under
+> `nvidia/cu13/lib`. `run.sh` adds that directory to `LD_LIBRARY_PATH`
+> automatically; outside `run.sh`, export it yourself:
+> ```bash
+> export LD_LIBRARY_PATH="$(python -c 'import nvidia,os;print(os.path.dirname(nvidia.__file__))')/cu13/lib:$LD_LIBRARY_PATH"
+> ```

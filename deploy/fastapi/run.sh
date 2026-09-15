@@ -176,6 +176,16 @@ if [ ! -d "$VENV_DIR" ]; then
     exit 1
 fi
 
+# paddlepaddle-gpu 3.2.2 was linked against the old split CUDA layout
+# ($ORIGIN/../../nvidia/cuda_nvrtc/lib and friends), but the CUDA 13 wheels it
+# now pulls in install everything under nvidia/cu13/lib. The RUNPATH therefore
+# misses libnvrtc.so.13 and "import paddle" dies before it can report anything
+# useful. Adding the directory when it exists is harmless for CPU-only and for
+# builds whose RUNPATH is already correct (3.3.0).
+for _cuda_lib in "$VENV_DIR"/lib/python*/site-packages/nvidia/cu13/lib; do
+    [ -d "$_cuda_lib" ] && export LD_LIBRARY_PATH="$_cuda_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+done
+
 # Check if service script exists
 if [ ! -f "$SERVICE_SCRIPT" ]; then
     echo ""

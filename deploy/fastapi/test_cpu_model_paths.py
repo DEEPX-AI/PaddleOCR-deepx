@@ -24,7 +24,10 @@ def svc(monkeypatch):
     return importlib.reload(ocr_service)
 
 
-def test_v5_server_is_the_default(svc):
+# v5 is no longer the default - it has to be asked for. See test_v6_default.py
+# for what an unset OCR_VERSION now resolves to.
+def test_v5_server(monkeypatch, svc):
+    monkeypatch.setenv("OCR_VERSION", "v5")
     paths = svc.get_model_paths()
     assert paths["det_model_name"] == "PP-OCRv5_server_det"
     assert paths["rec_model_name"] == "PP-OCRv5_server_rec"
@@ -32,6 +35,7 @@ def test_v5_server_is_the_default(svc):
 
 
 def test_v5_mobile(monkeypatch, svc):
+    monkeypatch.setenv("OCR_VERSION", "v5")
     monkeypatch.setenv("USE_MOBILE", "true")
     paths = svc.get_model_paths()
     assert paths["det_model_name"] == "PP-OCRv5_mobile_det"
