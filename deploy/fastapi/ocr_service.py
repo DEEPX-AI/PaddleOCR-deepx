@@ -1134,9 +1134,15 @@ def resolve_request_device(device, deepx):
     """Reconcile the new `device` field with the deprecated `deepx` flag.
 
     `device` always wins. `deepx=True` means the caller asked for the NPU.
-    `deepx=False` used to mean "CPU or GPU, whichever the server was started
-    with" - there is no server-wide setting any more, so it maps to
-    auto-selection rather than pinning CPU.
+
+    `deepx=False` means "not the NPU". It once picked up whichever non-NPU
+    device USE_GPU had configured the server for; with USE_GPU gone, it pins
+    cpu. Mapping it to auto-selection instead was wrong in the one way that
+    matters: auto-selection walks npu > gpu > cpu, so a caller that said "not
+    the NPU" was handed the NPU. That is exactly the CPU radio button in the
+    PP-OCRv5 online demo, whose entire purpose is a CPU-versus-NPU
+    comparison. A deprecated flag has to keep meaning what its callers meant
+    by it; anyone who wants the GPU now asks for it by name.
     """
     if device is not None:
         return device
@@ -1144,9 +1150,43 @@ def resolve_request_device(device, deepx):
         print("⚠️  'deepx' is deprecated; use device='npu' instead.")
         return "npu"
     if deepx is False:
-        print("⚠️  'deepx' is deprecated; omit it to auto-select a device, "
-              "or pass device='cpu' / 'gpu'.")
+        print("⚠️  'deepx' is deprecated; use device='cpu' instead "
+              "(or device='gpu', or omit it to auto-select).")
+        return "cpu"
     return None
+
+
+def build_stage_timings(device, totals, enabled, pages=1):
+    """Per-stage OCR timings for one response.
+
+    Only the NPU pipeline instruments individual stages, so every stage reads
+    0 on cpu and gpu. A stage the caller switched off reads null instead:
+    "did not run" and "ran, but is not measured here" are different answers,
+    and the demo dashboard draws them differently.
+
+    `pages` divides the totals to give per-page averages; the whole-request
+    sums pass 1. One function serves both blocks on purpose - they were two
+    parallel ladders of ternaries, and when `device` replaced `deepx` only
+    one ladder was updated, leaving detection and recognition pinned to 0
+    for every client that used the new field.
+    """
+    on_npu = device == 'npu'
+    divisor = pages if pages else 1
+
+    def stage(total, requested=True):
+        if not requested:
+            return None
+        if not on_npu:
+            return 0
+        return round(total / divisor, 2)
+
+    return {
+        'docOrientationMs': stage(totals['doc_ori'], enabled['docOrientation']),
+        'docUnwarpingMs': stage(totals['doc_uv'], enabled['docUnwarping']),
+        'detectionMs': stage(totals['det']),
+        'textlineOrientationMs': stage(totals['cls'], enabled['textlineOrientation']),
+        'recognitionMs': stage(totals['rec']),
+    }
 
 
 def get_ocr_engine(
@@ -1787,10 +1827,10 @@ async def baidu_ocr(request: BaiduOCRRequest):
     # timing breakdown below describe the device that actually ran.
     from device_selection import DeviceError as _DeviceError
     from device_selection import resolve_device as _resolve_device
+    _requested_device = resolve_request_device(getattr(request, 'device', None),
+                                               getattr(request, 'deepx', None))
     try:
-        _resolved_device = _resolve_device(
-            resolve_request_device(getattr(request, 'device', None),
-                                   getattr(request, 'deepx', None)))
+        _resolved_device = _resolve_device(_requested_device)
     except _DeviceError as _exc:
         # 503: the request named a device this deployment cannot provide.
         raise HTTPException(status_code=503, detail=str(_exc))
@@ -1857,7 +1897,7 @@ async def baidu_ocr(request: BaiduOCRRequest):
         # Preprocessing is handled inside process_images_with_ocr:
         # - CPU: Uses PaddleX models (process_with_doc_orientation, process_with_doc_unwarping)
         # - NPU: Handled internally in NPU PaddleOcr.__call__()
-        backend = "NPU" if request.deepx else "CPU"
+        backend = _resolved_device.upper()
         print(f"🔧 {backend} OCR parameters:")
         print(f"   useDocOrientationClassify: {request.useDocOrientationClassify}")
         print(f"   useDocUnwarping: {request.useDocUnwarping}")
@@ -1998,6 +2038,21 @@ async def baidu_ocr(request: BaiduOCRRequest):
             per_page_ocr_time = ocr_time / len(images_to_process) if len(images_to_process) > 0 else 0.0
             per_page_format_time = formatting_time / len(images_to_process) if len(images_to_process) > 0 else 0.0
             
+            _stage_ms = {
+                'doc_ori': total_doc_ori_ms,
+                'doc_uv': total_doc_uv_ms,
+                'det': total_det_ms,
+                'cls': total_cls_ms,
+                'rec': total_rec_ms,
+            }
+            _stages_enabled = {
+                'docOrientation': request.useDocOrientationClassify,
+                'docUnwarping': request.useDocUnwarping,
+                'textlineOrientation': request.useTextlineOrientation,
+            }
+            _stage_totals = build_stage_timings(_resolved_device, _stage_ms,
+                                                _stages_enabled)
+
             result_data['performanceMetrics'] = {
                 'totalTimeMs': round(total_pdf_time * 1000, 2),
                 'totalTimeSec': round(total_pdf_time, 3),
@@ -2009,28 +2064,19 @@ async def baidu_ocr(request: BaiduOCRRequest):
                     'formattingMs': round(formatting_time * 1000, 2),
                     'formattingSec': round(formatting_time, 3)
                 },
-                # Detailed OCR stage breakdown (sum of all pages)
-                # Note: CPU doesn't support per-stage timing, values will be 0
-                'ocrStages': {
-                    'docOrientationMs': round(total_doc_ori_ms, 2) if _resolved_device == 'npu' and request.useDocOrientationClassify else (None if not request.useDocOrientationClassify else 0),
-                    'docUnwarpingMs': round(total_doc_uv_ms, 2) if _resolved_device == 'npu' and request.useDocUnwarping else (None if not request.useDocUnwarping else 0),
-                    'detectionMs': round(total_det_ms, 2) if request.deepx else 0,
-                    'textlineOrientationMs': round(total_cls_ms, 2) if _resolved_device == 'npu' and request.useTextlineOrientation else (None if not request.useTextlineOrientation else 0),
-                    'recognitionMs': round(total_rec_ms, 2) if request.deepx else 0
-                },
-                'perPage': {
-                    'ocrInferenceMs': round(per_page_ocr_time * 1000, 2),
-                    'ocrInferenceSec': round(per_page_ocr_time, 3),
-                    'formattingMs': round(per_page_format_time * 1000, 2),
-                    'formattingSec': round(per_page_format_time, 3),
-                    # Per-page OCR stage breakdown (average)
-                    # Note: CPU doesn't support per-stage timing, values will be 0
-                    'docOrientationMs': round(total_doc_ori_ms / len(images_to_process), 2) if _resolved_device == 'npu' and request.useDocOrientationClassify and len(images_to_process) > 0 else (None if not request.useDocOrientationClassify else 0),
-                    'docUnwarpingMs': round(total_doc_uv_ms / len(images_to_process), 2) if _resolved_device == 'npu' and request.useDocUnwarping and len(images_to_process) > 0 else (None if not request.useDocUnwarping else 0),
-                    'detectionMs': round(total_det_ms / len(images_to_process), 2) if _resolved_device == 'npu' and len(images_to_process) > 0 else 0,
-                    'textlineOrientationMs': round(total_cls_ms / len(images_to_process), 2) if _resolved_device == 'npu' and request.useTextlineOrientation and len(images_to_process) > 0 else (None if not request.useTextlineOrientation else 0),
-                    'recognitionMs': round(total_rec_ms / len(images_to_process), 2) if _resolved_device == 'npu' and len(images_to_process) > 0 else 0
-                },
+                # Detailed OCR stage breakdown (sum of all pages, then the
+                # per-page average). Both come from build_stage_timings so the
+                # two can no longer disagree about a stage.
+                'ocrStages': _stage_totals,
+                'perPage': dict(
+                    ocrInferenceMs=round(per_page_ocr_time * 1000, 2),
+                    ocrInferenceSec=round(per_page_ocr_time, 3),
+                    formattingMs=round(per_page_format_time * 1000, 2),
+                    formattingSec=round(per_page_format_time, 3),
+                    **build_stage_timings(_resolved_device, _stage_ms,
+                                          _stages_enabled,
+                                          pages=len(images_to_process)),
+                ),
                 'pageCount': len(images_to_process),
                 'backend': _resolved_device.upper(),
                 'mode': 'sync' if request.sync else 'async',
@@ -2041,7 +2087,9 @@ async def baidu_ocr(request: BaiduOCRRequest):
         # Build response
         response = BaiduOCRResponse(
             device_used=_resolved_device,
-            device_requested=request.device or ('npu' if request.deepx else None),
+            # What the caller asked for, after the deprecated flag is
+            # mapped. None means they left the choice to the server.
+            device_requested=_requested_device,
             logId=log_id,
             errorCode=0,
             errorMsg="Success",
@@ -2081,7 +2129,8 @@ async def ocr_image(request: OCRRequest):
     - NPU + (single image OR sync): Sequential PaddleOcr processing
     - CPU: Always sequential processing
     
-    Note: OCR engine is selected dynamically based on request.deepx parameter
+    Note: the OCR engine is selected per request by the `device` field
+    (cpu | gpu | npu); omitting it auto-selects npu > gpu > cpu.
     No pre-initialization needed - get_ocr_engine() handles lazy loading
     """
     # Resolve the compute device once per request so the response describes
@@ -2230,7 +2279,8 @@ async def predict_ocr_system(request: OCRRequest):
     - NPU + (single image OR sync): Sequential PaddleOcr processing
     - CPU: Always sequential processing
     
-    Note: OCR engine is selected dynamically based on request.deepx parameter
+    Note: the OCR engine is selected per request by the `device` field
+    (cpu | gpu | npu); omitting it auto-selects npu > gpu > cpu.
     No pre-initialization needed - get_ocr_engine() handles lazy loading
     """
     # Resolve the compute device once per request so the response describes
@@ -2320,7 +2370,8 @@ async def batch_ocr(request: BatchOCRRequest):
     
     Returns OCR results for each image
     
-    Note: OCR engine is selected dynamically based on request.deepx parameter
+    Note: the OCR engine is selected per request by the `device` field
+    (cpu | gpu | npu); omitting it auto-selects npu > gpu > cpu.
     No pre-initialization needed - get_ocr_engine() handles lazy loading
     """
     # Resolve the compute device once per request so the response describes
